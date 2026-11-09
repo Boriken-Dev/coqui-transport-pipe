@@ -8,7 +8,7 @@ pub struct coqui_transport_pipe::asynch::Connector
 impl coqui_transport_pipe::asynch::Connector
 pub fn coqui_transport_pipe::asynch::Connector::name(&self) -> &coqui_transport_pipe::PipeName
 pub fn coqui_transport_pipe::asynch::Connector::new(coqui_transport_pipe::PipeName) -> Self
-pub fn coqui_transport_pipe::asynch::Connector::with_options(self, coqui_transport_pipe::ConnectOptions) -> Self
+pub fn coqui_transport_pipe::asynch::Connector::settings(self, coqui_transport_pipe::ConnectSettings) -> Self
 impl coqui_transport::asynch::AsyncConnector for coqui_transport_pipe::asynch::Connector
 pub type coqui_transport_pipe::asynch::Connector::Connection = coqui_transport_pipe::asynch::Stream
 pub type coqui_transport_pipe::asynch::Connector::Error = coqui_transport_pipe::Error
@@ -17,14 +17,12 @@ pub struct coqui_transport_pipe::asynch::Listener
 impl coqui_transport_pipe::asynch::Listener
 pub async fn coqui_transport_pipe::asynch::Listener::accept(&mut self) -> core::result::Result<coqui_transport_pipe::asynch::Stream, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::asynch::Listener::bind(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
-pub fn coqui_transport_pipe::asynch::Listener::bind_with(&coqui_transport_pipe::PipeName, coqui_transport_pipe::ListenerOptions) -> core::result::Result<Self, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::asynch::Listener::name(&self) -> &coqui_transport_pipe::PipeName
 pub fn coqui_transport_pipe::asynch::Listener::non_defaults(&self) -> &[coqui_peer::non_default::NonDefault]
 pub fn coqui_transport_pipe::asynch::Listener::not_applied(&self) -> &[coqui_peer::non_default::NonDefault]
 pub struct coqui_transport_pipe::asynch::Stream
 impl coqui_transport_pipe::asynch::Stream
 pub async fn coqui_transport_pipe::asynch::Stream::connect(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
-pub async fn coqui_transport_pipe::asynch::Stream::connect_with(&coqui_transport_pipe::PipeName, coqui_transport_pipe::ConnectOptions) -> core::result::Result<Self, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::asynch::Stream::peer(&self) -> core::io::error::Result<coqui_transport_pipe::OsIdentity>
 impl tokio::io::async_read::AsyncRead for coqui_transport_pipe::asynch::Stream
 pub fn coqui_transport_pipe::asynch::Stream::poll_read(core::pin::Pin<&mut Self>, &mut core::task::wake::Context<'_>, &mut tokio::io::read_buf::ReadBuf<'_>) -> core::task::poll::Poll<core::io::error::Result<()>>
@@ -56,23 +54,33 @@ impl core::error::Error for coqui_transport_pipe::Error
 pub fn coqui_transport_pipe::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Display for coqui_transport_pipe::Error
 pub fn coqui_transport_pipe::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-pub struct coqui_transport_pipe::ConnectOptions
-impl coqui_transport_pipe::ConnectOptions
-pub fn coqui_transport_pipe::ConnectOptions::allow_impersonation(self, bool) -> Self
-pub fn coqui_transport_pipe::ConnectOptions::connect(self, &coqui_transport_pipe::PipeName) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
-pub fn coqui_transport_pipe::ConnectOptions::new() -> Self
-pub fn coqui_transport_pipe::ConnectOptions::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
-pub fn coqui_transport_pipe::ConnectOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
-pub fn coqui_transport_pipe::ConnectOptions::read_timeout(self, core::option::Option<core::time::Duration>) -> Self
-pub fn coqui_transport_pipe::ConnectOptions::timeout(self, core::time::Duration) -> Self
-pub fn coqui_transport_pipe::ConnectOptions::write_timeout(self, core::option::Option<core::time::Duration>) -> Self
-impl core::default::Default for coqui_transport_pipe::ConnectOptions
-pub fn coqui_transport_pipe::ConnectOptions::default() -> Self
+pub struct coqui_transport_pipe::ConnectBuilder
+impl coqui_transport_pipe::ConnectBuilder
+pub fn coqui_transport_pipe::ConnectBuilder::build(self) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
+pub async fn coqui_transport_pipe::ConnectBuilder::build_async(self) -> core::result::Result<coqui_transport_pipe::asynch::Stream, coqui_transport_pipe::Error>
+pub fn coqui_transport_pipe::ConnectBuilder::impersonation(self, bool) -> Self
+pub fn coqui_transport_pipe::ConnectBuilder::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ConnectBuilder::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ConnectBuilder::read_timeout(self, core::time::Duration) -> Self
+pub fn coqui_transport_pipe::ConnectBuilder::settings(self, coqui_transport_pipe::ConnectSettings) -> Self
+pub fn coqui_transport_pipe::ConnectBuilder::timeout(self, core::time::Duration) -> Self
+pub fn coqui_transport_pipe::ConnectBuilder::write_timeout(self, core::time::Duration) -> Self
+#[non_exhaustive] pub struct coqui_transport_pipe::ConnectSettings
+pub coqui_transport_pipe::ConnectSettings::impersonation: bool
+pub coqui_transport_pipe::ConnectSettings::read_timeout: core::time::Duration
+pub coqui_transport_pipe::ConnectSettings::timeout: core::time::Duration
+pub coqui_transport_pipe::ConnectSettings::write_timeout: core::time::Duration
+impl coqui_transport_pipe::ConnectSettings
+pub const fn coqui_transport_pipe::ConnectSettings::new() -> Self
+pub fn coqui_transport_pipe::ConnectSettings::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ConnectSettings::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+impl core::default::Default for coqui_transport_pipe::ConnectSettings
+pub fn coqui_transport_pipe::ConnectSettings::default() -> Self
 pub struct coqui_transport_pipe::Connector
 impl coqui_transport_pipe::Connector
 pub fn coqui_transport_pipe::Connector::name(&self) -> &coqui_transport_pipe::PipeName
 pub fn coqui_transport_pipe::Connector::new(coqui_transport_pipe::PipeName) -> Self
-pub fn coqui_transport_pipe::Connector::with_options(self, coqui_transport_pipe::ConnectOptions) -> Self
+pub fn coqui_transport_pipe::Connector::settings(self, coqui_transport_pipe::ConnectSettings) -> Self
 impl coqui_transport::connector::Connector for coqui_transport_pipe::Connector
 pub type coqui_transport_pipe::Connector::Connection = coqui_transport_pipe::Stream
 pub type coqui_transport_pipe::Connector::Error = coqui_transport_pipe::Error
@@ -82,35 +90,53 @@ impl coqui_transport_pipe::Listener
 pub fn coqui_transport_pipe::Listener::accept(&self) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::Listener::accept_timeout(&self, core::option::Option<core::time::Duration>) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::Listener::bind(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
+pub fn coqui_transport_pipe::Listener::builder(&coqui_transport_pipe::PipeName) -> coqui_transport_pipe::ListenerBuilder
 pub fn coqui_transport_pipe::Listener::name(&self) -> &coqui_transport_pipe::PipeName
 pub fn coqui_transport_pipe::Listener::non_defaults(&self) -> &[coqui_peer::non_default::NonDefault]
 pub fn coqui_transport_pipe::Listener::not_applied(&self) -> &[coqui_peer::non_default::NonDefault]
-pub fn coqui_transport_pipe::Listener::options() -> coqui_transport_pipe::ListenerOptions
 impl coqui_transport::connector::Listener for coqui_transport_pipe::Listener
 pub type coqui_transport_pipe::Listener::Connection = coqui_transport_pipe::Stream
 pub type coqui_transport_pipe::Listener::Error = coqui_transport_pipe::Error
 pub fn coqui_transport_pipe::Listener::accept(&self) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
-pub struct coqui_transport_pipe::ListenerOptions
-impl coqui_transport_pipe::ListenerOptions
-pub fn coqui_transport_pipe::ListenerOptions::allow_remote_clients(self, bool) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::allow_shared_directory(self, bool) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::backlog(self, i32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::bind(self, &coqui_transport_pipe::PipeName) -> core::result::Result<coqui_transport_pipe::Listener, coqui_transport_pipe::Error>
-pub fn coqui_transport_pipe::ListenerOptions::buffer_size(self, u32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::first_instance(self, bool) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::max_instances(self, u32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::new() -> Self
-pub fn coqui_transport_pipe::ListenerOptions::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
-pub fn coqui_transport_pipe::ListenerOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
-pub fn coqui_transport_pipe::ListenerOptions::read_timeout(self, core::option::Option<core::time::Duration>) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::remove_stale(self, bool) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::security_descriptor(self, impl core::convert::Into<alloc::string::String>) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::socket_group(self, u32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::socket_group_name(self, impl core::convert::Into<alloc::string::String>) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::socket_mode(self, u32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::write_timeout(self, core::option::Option<core::time::Duration>) -> Self
-impl core::default::Default for coqui_transport_pipe::ListenerOptions
-pub fn coqui_transport_pipe::ListenerOptions::default() -> Self
+pub struct coqui_transport_pipe::ListenerBuilder
+impl coqui_transport_pipe::ListenerBuilder
+pub fn coqui_transport_pipe::ListenerBuilder::backlog(self, i32) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::buffer_size(self, u32) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::build(self) -> core::result::Result<coqui_transport_pipe::Listener, coqui_transport_pipe::Error>
+pub fn coqui_transport_pipe::ListenerBuilder::build_async(self) -> core::result::Result<coqui_transport_pipe::asynch::Listener, coqui_transport_pipe::Error>
+pub fn coqui_transport_pipe::ListenerBuilder::first_instance(self, bool) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::max_instances(self, u32) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ListenerBuilder::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ListenerBuilder::read_timeout(self, core::time::Duration) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::remote_clients(self, bool) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::remove_stale(self, bool) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::security_descriptor(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::settings(self, coqui_transport_pipe::ListenerSettings) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::shared_directory(self, bool) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::socket_group(self, u32) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::socket_group_name(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::socket_mode(self, u32) -> Self
+pub fn coqui_transport_pipe::ListenerBuilder::write_timeout(self, core::time::Duration) -> Self
+#[non_exhaustive] pub struct coqui_transport_pipe::ListenerSettings
+pub coqui_transport_pipe::ListenerSettings::backlog: i32
+pub coqui_transport_pipe::ListenerSettings::buffer_size: u32
+pub coqui_transport_pipe::ListenerSettings::first_instance: bool
+pub coqui_transport_pipe::ListenerSettings::max_instances: u32
+pub coqui_transport_pipe::ListenerSettings::read_timeout: core::time::Duration
+pub coqui_transport_pipe::ListenerSettings::remote_clients: bool
+pub coqui_transport_pipe::ListenerSettings::remove_stale: bool
+pub coqui_transport_pipe::ListenerSettings::security_descriptor: core::option::Option<alloc::string::String>
+pub coqui_transport_pipe::ListenerSettings::shared_directory: bool
+pub coqui_transport_pipe::ListenerSettings::socket_group: core::option::Option<alloc::string::String>
+pub coqui_transport_pipe::ListenerSettings::socket_mode: u32
+pub coqui_transport_pipe::ListenerSettings::write_timeout: core::time::Duration
+impl coqui_transport_pipe::ListenerSettings
+pub const fn coqui_transport_pipe::ListenerSettings::new() -> Self
+pub fn coqui_transport_pipe::ListenerSettings::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ListenerSettings::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+impl core::default::Default for coqui_transport_pipe::ListenerSettings
+pub fn coqui_transport_pipe::ListenerSettings::default() -> Self
 #[non_exhaustive] pub struct coqui_transport_pipe::OsIdentity
 pub coqui_transport_pipe::OsIdentity::group: core::option::Option<alloc::string::String>
 pub coqui_transport_pipe::OsIdentity::host: core::option::Option<alloc::string::String>
@@ -138,8 +164,8 @@ impl alloc::io::read::Read for coqui_transport_pipe::ReadHalf
 pub fn coqui_transport_pipe::ReadHalf::read(&mut self, &mut [u8]) -> core::io::error::Result<usize>
 pub struct coqui_transport_pipe::Stream
 impl coqui_transport_pipe::Stream
+pub fn coqui_transport_pipe::Stream::builder(&coqui_transport_pipe::PipeName) -> coqui_transport_pipe::ConnectBuilder
 pub fn coqui_transport_pipe::Stream::connect(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
-pub fn coqui_transport_pipe::Stream::options() -> coqui_transport_pipe::ConnectOptions
 pub fn coqui_transport_pipe::Stream::peer(&self) -> core::io::error::Result<coqui_transport_pipe::OsIdentity>
 pub fn coqui_transport_pipe::Stream::shutdown(&self) -> core::io::error::Result<()>
 impl alloc::io::read::Read for &coqui_transport_pipe::Stream

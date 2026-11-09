@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Builders and settings.** `Listener::builder(name)` and `Stream::builder(name)` set a bind or a connection up by the
+  setting's name (`remote_clients`, `security_descriptor`, `first_instance`, `max_instances`, `buffer_size`, `socket_mode`,
+  `socket_group`, `socket_group_name`, `shared_directory`, `remove_stale`, `backlog`, `timeout`, `impersonation`,
+  `read_timeout`, `write_timeout`, `settings`), then `build()`, or `build_async()` for the tokio forms; `Listener::bind` and
+  `Stream::connect` stay as the defaults. `ListenerSettings` and `ConnectSettings` are guatiao values a file fills, and
+  `settings(..)` takes one whole. A timeout is a `Duration`, and `Duration::MAX` waits forever. `non_defaults()` lists
+  every setting that differs from its default and means something on this platform, named by key; `not_applied()` the
+  ones meaningless here. `Connector::settings` replaces `with_options`.
 - `PipeName`: a validated Windows pipe name or Unix socket path, written `pipe:NAME` or `unix:PATH`.
 - `Listener` and `Stream`: blocking listen, accept and connect, one API over named pipes and Unix
   domain sockets. A stream implements `Read`, `Write`, `coqui_peer::ReadTimeout` and `WriteTimeout`, so

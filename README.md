@@ -23,7 +23,7 @@ See the [documentation](https://boriken-dev.github.io/coqui-transport-pipe/).
   refused rather than joined, clients on other hosts are refused, and a client connects at the identification level,
   so a server cannot act as it. On Unix a `0600` socket from the moment its path exists, in a directory only its owner
   can write, with a socket left behind removed only when nothing listens on it.
-- **Your choice, and visible**: every default can be loosened on a builder; what is looser is listed by `non_defaults()`
+- **Your choice, and visible**: every default can be loosened on a builder; what differs from its default is listed by `non_defaults()`
   and logged at `debug` through `tracing`. The crate reports and the caller decides: only the application knows whether a
   shared socket or a long timeout was meant.
 - **Every `coqui-peer` driver**: `Read + Write`, `ReadTimeout` and `WriteTimeout` for streams, so deadlines hold;
@@ -86,8 +86,8 @@ use coqui_transport_pipe::{Listener, PipeName, Stream};
 # let name = PipeName::named_in(directory.path(), &name)?;
 let (ours, theirs) = (Identity::generate()?, Identity::generate()?);
 let (our_id, their_id) = (ours.peer_id(), theirs.peer_id());
-let dialling = Noise::new(ours).with_responders(Trust::pinned([their_id]));
-let answering = Noise::new(theirs).with_initiators(Trust::pinned([our_id]));
+let dialling = Noise::builder(ours).responders(Trust::pinned([their_id])).build();
+let answering = Noise::builder(theirs).initiators(Trust::pinned([our_id])).build();
 
 let listener = Listener::bind(&name)?;
 let mut client = Stream::connect(&name)?;
@@ -102,20 +102,24 @@ assert_eq!(served.join().unwrap()?, our_id);
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
-Looser settings are a choice, and are reported:
+A setting that differs from its default is a choice, and is reported:
 
 ```rust
-use coqui_transport_pipe::Listener;
+use std::time::Duration;
+use coqui_transport_pipe::{Listener, PipeName};
 
-let options = Listener::options().read_timeout(None);
-assert_eq!(options.non_defaults()[0].setting, "read_timeout");
+let directory = tempfile::tempdir()?;
+let name = PipeName::named_in(directory.path(), "readme-builder")?;
+let builder = Listener::builder(&name).read_timeout(Duration::MAX);
+assert_eq!(builder.non_defaults()[0].setting, "read_timeout");
+# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 ## API overview
 
 | Module | Purpose |
 | --- | --- |
-| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerOptions`, `Stream`, `ConnectOptions`, `Connector`, `OsIdentity`, `Error`, `ReadHalf` and `WriteHalf` (`channel`), and `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault`. |
+| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerBuilder`, `ListenerSettings`, `Stream`, `ConnectBuilder`, `ConnectSettings`, `Connector`, `OsIdentity`, `Error`, `ReadHalf` and `WriteHalf` (`channel`), and `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault`. |
 | `coqui_transport_pipe::asynch` | The listener, the stream and `Connector` over tokio (`tokio`). |
 
 ## Limits
