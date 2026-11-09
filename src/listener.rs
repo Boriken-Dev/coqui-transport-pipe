@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use coqui_peer::Weakening;
+use coqui_peer::NonDefault;
 
 use crate::error::Error;
 use crate::name::PipeName;
@@ -25,12 +25,12 @@ use crate::sys;
 pub struct Listener {
     inner: sys::Listener,
     name: PipeName,
-    weakened: Vec<Weakening>,
-    not_applied: Vec<Weakening>,
+    non_defaults: Vec<NonDefault>,
+    not_applied: Vec<NonDefault>,
 }
 
 impl Listener {
-    /// Binds `name` with [`ListenerOptions`]'s strict defaults.
+    /// Binds `name` with [`ListenerOptions`]'s defaults.
     ///
     /// # Errors
     ///
@@ -48,13 +48,13 @@ impl Listener {
 
     pub(crate) fn with_options(name: &PipeName, options: ListenerOptions) -> Result<Self, Error> {
         options.check()?;
-        options.log_weakened();
-        let weakened = options.weakened();
+        options.log_non_defaults();
+        let non_defaults = options.non_defaults();
         let not_applied = options.not_applied();
         Ok(Self {
             inner: sys::Listener::bind(name, &options)?,
             name: name.clone(),
-            weakened,
+            non_defaults,
             not_applied,
         })
     }
@@ -87,14 +87,14 @@ impl Listener {
 
     /// Every setting this was bound with that is looser than its default.
     #[must_use]
-    pub fn weakened(&self) -> &[Weakening] {
-        &self.weakened
+    pub fn non_defaults(&self) -> &[NonDefault] {
+        &self.non_defaults
     }
 
     /// Every setting this was bound with that this platform could not honour, as
     /// [`ListenerOptions::not_applied`].
     #[must_use]
-    pub fn not_applied(&self) -> &[Weakening] {
+    pub fn not_applied(&self) -> &[NonDefault] {
         &self.not_applied
     }
 }

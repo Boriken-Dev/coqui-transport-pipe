@@ -1,7 +1,7 @@
 pub mod coqui_transport_pipe
 pub use coqui_transport_pipe::MessageTransport
+pub use coqui_transport_pipe::NonDefault
 pub use coqui_transport_pipe::ReadTimeout
-pub use coqui_transport_pipe::Weakening
 pub use coqui_transport_pipe::WriteTimeout
 pub mod coqui_transport_pipe::asynch
 pub struct coqui_transport_pipe::asynch::Connector
@@ -19,8 +19,8 @@ pub async fn coqui_transport_pipe::asynch::Listener::accept(&mut self) -> core::
 pub fn coqui_transport_pipe::asynch::Listener::bind(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::asynch::Listener::bind_with(&coqui_transport_pipe::PipeName, coqui_transport_pipe::ListenerOptions) -> core::result::Result<Self, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::asynch::Listener::name(&self) -> &coqui_transport_pipe::PipeName
-pub fn coqui_transport_pipe::asynch::Listener::not_applied(&self) -> &[coqui_peer::weakening::Weakening]
-pub fn coqui_transport_pipe::asynch::Listener::weakened(&self) -> &[coqui_peer::weakening::Weakening]
+pub fn coqui_transport_pipe::asynch::Listener::non_defaults(&self) -> &[coqui_peer::non_default::NonDefault]
+pub fn coqui_transport_pipe::asynch::Listener::not_applied(&self) -> &[coqui_peer::non_default::NonDefault]
 pub struct coqui_transport_pipe::asynch::Stream
 impl coqui_transport_pipe::asynch::Stream
 pub async fn coqui_transport_pipe::asynch::Stream::connect(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
@@ -61,10 +61,10 @@ impl coqui_transport_pipe::ConnectOptions
 pub fn coqui_transport_pipe::ConnectOptions::allow_impersonation(self, bool) -> Self
 pub fn coqui_transport_pipe::ConnectOptions::connect(self, &coqui_transport_pipe::PipeName) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::ConnectOptions::new() -> Self
-pub fn coqui_transport_pipe::ConnectOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::weakening::Weakening>
+pub fn coqui_transport_pipe::ConnectOptions::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ConnectOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
 pub fn coqui_transport_pipe::ConnectOptions::read_timeout(self, core::option::Option<core::time::Duration>) -> Self
 pub fn coqui_transport_pipe::ConnectOptions::timeout(self, core::time::Duration) -> Self
-pub fn coqui_transport_pipe::ConnectOptions::weakened(&self) -> alloc::vec::Vec<coqui_peer::weakening::Weakening>
 pub fn coqui_transport_pipe::ConnectOptions::write_timeout(self, core::option::Option<core::time::Duration>) -> Self
 impl core::default::Default for coqui_transport_pipe::ConnectOptions
 pub fn coqui_transport_pipe::ConnectOptions::default() -> Self
@@ -83,9 +83,9 @@ pub fn coqui_transport_pipe::Listener::accept(&self) -> core::result::Result<coq
 pub fn coqui_transport_pipe::Listener::accept_timeout(&self, core::option::Option<core::time::Duration>) -> core::result::Result<coqui_transport_pipe::Stream, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::Listener::bind(&coqui_transport_pipe::PipeName) -> core::result::Result<Self, coqui_transport_pipe::Error>
 pub fn coqui_transport_pipe::Listener::name(&self) -> &coqui_transport_pipe::PipeName
-pub fn coqui_transport_pipe::Listener::not_applied(&self) -> &[coqui_peer::weakening::Weakening]
+pub fn coqui_transport_pipe::Listener::non_defaults(&self) -> &[coqui_peer::non_default::NonDefault]
+pub fn coqui_transport_pipe::Listener::not_applied(&self) -> &[coqui_peer::non_default::NonDefault]
 pub fn coqui_transport_pipe::Listener::options() -> coqui_transport_pipe::ListenerOptions
-pub fn coqui_transport_pipe::Listener::weakened(&self) -> &[coqui_peer::weakening::Weakening]
 impl coqui_transport::connector::Listener for coqui_transport_pipe::Listener
 pub type coqui_transport_pipe::Listener::Connection = coqui_transport_pipe::Stream
 pub type coqui_transport_pipe::Listener::Error = coqui_transport_pipe::Error
@@ -100,14 +100,14 @@ pub fn coqui_transport_pipe::ListenerOptions::buffer_size(self, u32) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::first_instance(self, bool) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::max_instances(self, u32) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::new() -> Self
-pub fn coqui_transport_pipe::ListenerOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::weakening::Weakening>
+pub fn coqui_transport_pipe::ListenerOptions::non_defaults(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
+pub fn coqui_transport_pipe::ListenerOptions::not_applied(&self) -> alloc::vec::Vec<coqui_peer::non_default::NonDefault>
 pub fn coqui_transport_pipe::ListenerOptions::read_timeout(self, core::option::Option<core::time::Duration>) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::remove_stale(self, bool) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::security_descriptor(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::socket_group(self, u32) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::socket_group_name(self, impl core::convert::Into<alloc::string::String>) -> Self
 pub fn coqui_transport_pipe::ListenerOptions::socket_mode(self, u32) -> Self
-pub fn coqui_transport_pipe::ListenerOptions::weakened(&self) -> alloc::vec::Vec<coqui_peer::weakening::Weakening>
 pub fn coqui_transport_pipe::ListenerOptions::write_timeout(self, core::option::Option<core::time::Duration>) -> Self
 impl core::default::Default for coqui_transport_pipe::ListenerOptions
 pub fn coqui_transport_pipe::ListenerOptions::default() -> Self

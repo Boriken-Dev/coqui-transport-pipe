@@ -11,7 +11,7 @@ use core::task::{Context, Poll};
 use std::io;
 use std::time::Instant;
 
-use coqui_peer::Weakening;
+use coqui_peer::NonDefault;
 use coqui_transport::asynch::{AsyncConnector, BoxFuture};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -48,12 +48,12 @@ struct Waiting {
 pub struct Listener {
     waiting: Waiting,
     name: PipeName,
-    weakened: Vec<Weakening>,
-    not_applied: Vec<Weakening>,
+    non_defaults: Vec<NonDefault>,
+    not_applied: Vec<NonDefault>,
 }
 
 impl Listener {
-    /// Binds `name` with [`ListenerOptions`]'s strict defaults.
+    /// Binds `name` with [`ListenerOptions`]'s defaults.
     ///
     /// # Errors
     ///
@@ -69,13 +69,13 @@ impl Listener {
     /// As [`ListenerOptions::bind`].
     pub fn bind_with(name: &PipeName, options: ListenerOptions) -> Result<Self, Error> {
         options.check()?;
-        options.log_weakened();
-        let weakened = options.weakened();
+        options.log_non_defaults();
+        let non_defaults = options.non_defaults();
         let not_applied = options.not_applied();
         Ok(Self {
             waiting: Waiting::bind(name, &options)?,
             name: name.clone(),
-            weakened,
+            non_defaults,
             not_applied,
         })
     }
@@ -97,14 +97,14 @@ impl Listener {
 
     /// Every setting this was bound with that is looser than its default.
     #[must_use]
-    pub fn weakened(&self) -> &[Weakening] {
-        &self.weakened
+    pub fn non_defaults(&self) -> &[NonDefault] {
+        &self.non_defaults
     }
 
     /// Every setting this was bound with that this platform could not honour, as
     /// [`ListenerOptions::not_applied`].
     #[must_use]
-    pub fn not_applied(&self) -> &[Weakening] {
+    pub fn not_applied(&self) -> &[NonDefault] {
         &self.not_applied
     }
 }
@@ -202,7 +202,7 @@ impl Stream {
     /// As [`ConnectOptions::connect`].
     pub async fn connect_with(name: &PipeName, options: ConnectOptions) -> Result<Self, Error> {
         options.check()?;
-        options.log_weakened();
+        options.log_non_defaults();
         let deadline = deadline::after(options.timeout);
         loop {
             if let Some(inner) = Inner::try_connect(name, &options, deadline)? {

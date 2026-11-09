@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::os::windows::ffi::OsStrExt;
 use std::time::Duration;
 
-use coqui_transport_pipe::{Error, Listener, PipeName, Stream, Weakening, current_user};
+use coqui_transport_pipe::{Error, Listener, NonDefault, PipeName, Stream, current_user};
 use support::place;
 use windows_sys::Win32::Foundation::LocalFree;
 use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, INVALID_HANDLE_VALUE};
@@ -299,8 +299,8 @@ fn a_descriptor_of_ones_own_says_who_else_is_let_in_and_is_listed_as_weaker() {
         .bind(&place.name)
         .unwrap();
     assert_eq!(
-        listener.weakened(),
-        [Weakening::new(
+        listener.non_defaults(),
+        [NonDefault::new(
             "security_descriptor",
             sddl,
             "the current user only"
@@ -342,8 +342,8 @@ fn turning_the_first_instance_off_joins_a_pipe_and_is_listed_as_weaker() {
         .bind(&place.name)
         .unwrap();
     assert_eq!(
-        listener.weakened(),
-        [Weakening::new("first_instance", "false", "true")]
+        listener.non_defaults(),
+        [NonDefault::new("first_instance", "false", "true")]
     );
     // SAFETY: the handle is this test's.
     unsafe { CloseHandle(other) };
@@ -405,8 +405,8 @@ fn a_remote_client_allowed_by_the_builder_connects_says_where_it_is_from_and_is_
         .bind(&place.name)
         .unwrap();
     assert_eq!(
-        listener.weakened(),
-        [Weakening::new("remote_clients", "allowed", "refused")]
+        listener.non_defaults(),
+        [NonDefault::new("remote_clients", "allowed", "refused")]
     );
     let client = Stream::connect(&local_name_for_loopback(&place.name)).unwrap();
     let server = listener
@@ -488,7 +488,7 @@ fn a_server_can_identify_a_client_and_cannot_act_as_it() {
 fn a_client_can_choose_to_let_a_server_act_as_it_and_lists_it_as_weaker() {
     assert_eq!(level_a_server_gets(true), 2, "SecurityImpersonation");
     let options = Stream::options().allow_impersonation(true);
-    assert_eq!(options.weakened()[0].setting, "impersonation");
+    assert_eq!(options.non_defaults()[0].setting, "impersonation");
 }
 
 #[test]

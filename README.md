@@ -23,7 +23,7 @@ See the [documentation](https://boriken-dev.github.io/coqui-transport-pipe/).
   refused rather than joined, clients on other hosts are refused, and a client connects at the identification level,
   so a server cannot act as it. On Unix a `0600` socket from the moment its path exists, in a directory only its owner
   can write, with a socket left behind removed only when nothing listens on it.
-- **Your choice, and visible**: every default can be loosened on a builder; what is looser is listed by `weakened()`
+- **Your choice, and visible**: every default can be loosened on a builder; what is looser is listed by `non_defaults()`
   and logged at `debug` through `tracing`. The crate reports and the caller decides: only the application knows whether a
   shared socket or a long timeout was meant.
 - **Every `coqui-peer` driver**: `Read + Write`, `ReadTimeout` and `WriteTimeout` for streams, so deadlines hold;
@@ -108,14 +108,14 @@ Looser settings are a choice, and are reported:
 use coqui_transport_pipe::Listener;
 
 let options = Listener::options().read_timeout(None);
-assert_eq!(options.weakened()[0].setting, "read_timeout");
+assert_eq!(options.non_defaults()[0].setting, "read_timeout");
 ```
 
 ## API overview
 
 | Module | Purpose |
 | --- | --- |
-| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerOptions`, `Stream`, `ConnectOptions`, `Connector`, `OsIdentity`, `Error`, `ReadHalf` and `WriteHalf` (`channel`), and `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `Weakening`. |
+| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerOptions`, `Stream`, `ConnectOptions`, `Connector`, `OsIdentity`, `Error`, `ReadHalf` and `WriteHalf` (`channel`), and `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault`. |
 | `coqui_transport_pipe::asynch` | The listener, the stream and `Connector` over tokio (`tokio`). |
 
 ## Limits

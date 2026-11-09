@@ -8,8 +8,8 @@ to squat and the operating system's access control beside the key proof.
 !!! note "Alpha"
     `0.0.0-alpha.0` is unreleased: depend on a git revision. The API may change in any commit.
 
-The listener's defaults are the strict ones, and each can be loosened and is then listed as a
-weakening:
+The listener's defaults are the safe ones, and each can be changed and is then listed as a
+non-default setting:
 
 - On Windows the pipe's descriptor gives the current user alone access, a name that exists is
   refused rather than joined, clients on other hosts are refused, and a client connects at the

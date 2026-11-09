@@ -211,7 +211,7 @@ async fn a_deadline_is_met_on_a_silent_peer() {
 
 #[cfg(windows)]
 mod windows {
-    use coqui_transport_pipe::{ListenerOptions, PipeName, Weakening};
+    use coqui_transport_pipe::{ListenerOptions, NonDefault, PipeName};
 
     use super::*;
 
@@ -240,16 +240,16 @@ mod windows {
     }
 
     #[tokio::test]
-    async fn weakened_settings_are_listed() {
-        let place = place("weakened");
+    async fn non_default_settings_are_listed() {
+        let place = place("non_defaults");
         let listener = Listener::bind_with(
             &place.name,
             ListenerOptions::new().allow_remote_clients(true),
         )
         .unwrap();
         assert_eq!(
-            listener.weakened(),
-            [Weakening::new("remote_clients", "allowed", "refused")]
+            listener.non_defaults(),
+            [NonDefault::new("remote_clients", "allowed", "refused")]
         );
     }
 }

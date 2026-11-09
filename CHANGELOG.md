@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   `PIPE_REJECT_REMOTE_CLIENTS`, and clients at `SECURITY_IDENTIFICATION`. Unix: a `0600` socket from
   the moment its path exists, directories others can write refused along the path as written and as
   resolved, links on the way of another user refused, a socket left behind removed only when nothing
-  listens on it. Every setting looser than its default is listed by `weakened()` and logged at `warn`
+  listens on it. Every setting looser than its default is listed by `non_defaults()` and logged at `debug`
   through `tracing`.
 - `PipeName` text names this host only: `\\HOST\pipe\NAME` is made with `PipeName::at` or `on_host`.
   Windows names Win32 would rewrite (a trailing dot or space, `\\?\`) are refused.
@@ -33,7 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   on a pipe.
 - `ListenerOptions::socket_group` and `socket_group_name` (Unix): the socket's group, set before the path exists, so
   `socket_mode(0o660)` shares it with that group alone. A group the process cannot set is `Error::GroupDenied`, a name
-  nobody has is `Error::UnknownGroup`, another group than the process's own is in `weakened()`, and Windows refuses it.
+  nobody has is `Error::UnknownGroup`, another group than the process's own is in `non_defaults()`, and Windows refuses it.
 - `not_applied()` on `ListenerOptions`, `Listener`, `asynch::Listener` and `ConnectOptions`.
 - `Connector`, and `asynch::Connector` with `tokio`: a name and `ConnectOptions` as a `coqui_transport::Connector` and
   `AsyncConnector`; `Listener` is a `coqui_transport::Listener`.
@@ -47,11 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   caller chooses.
 - The crate picks no framing: the caller gives `StreamChannel` a codec. A framing is an implementation detail of
   whoever speaks it, so none lives here.
-- A setting looser than its default is reported, never warned about: `weakened()` returns it (what, its default, its
+- A setting that differs from its default is a non-default setting: the report is coqui-peer's `NonDefault`
+  (`setting`, `value`, `default`) and the methods are `non_defaults()` and `not_applied()`; no alias is kept, since
+  the crate is not released.
+- A setting looser than its default is reported, never warned about: `non_defaults()` returns it (what, its default, its
   value) and the crate logs it at `debug`. Only the application knows whether a shared socket or a long timeout was
   meant.
 - `socket_mode` accepts any mode up to `0o7777`, where it had to hold `0o600` and stay within `0o777`; one other than the
-  default is in `weakened()` and is never refused or warned about.
+  default is in `non_defaults()` and is never refused or warned about.
 - `ListenerOptions::bind` refuses, with `InvalidOptions`, a setting stricter than the default that the platform cannot
   honour (`socket_group` and `remove_stale(false)` on Windows, `security_descriptor` and `max_instances` on Unix). One
   that is meaningless there is no longer dropped silently: `not_applied()` lists it.

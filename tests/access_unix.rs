@@ -15,7 +15,7 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
-use coqui_transport_pipe::{Error, Listener, PipeName, Stream, Weakening, current_user};
+use coqui_transport_pipe::{Error, Listener, NonDefault, PipeName, Stream, current_user};
 use support::{place, private_directory, temp_base};
 
 fn mode(path: &Path) -> u32 {
@@ -98,8 +98,8 @@ fn a_looser_mode_is_a_choice_and_is_listed_as_weaker() {
         .unwrap();
     assert_eq!(mode(place.name.path()), 0o660);
     assert_eq!(
-        listener.weakened(),
-        [Weakening::new("socket_mode", "660", "600")]
+        listener.non_defaults(),
+        [NonDefault::new("socket_mode", "660", "600")]
     );
 }
 
@@ -246,8 +246,8 @@ fn a_shared_directory_is_a_choice_and_is_listed_as_weaker() {
         .bind(&name)
         .unwrap();
     assert_eq!(
-        listener.weakened(),
-        [Weakening::new("shared_directory", "allowed", "refused")]
+        listener.non_defaults(),
+        [NonDefault::new("shared_directory", "allowed", "refused")]
     );
     round_trip(&listener, &name);
 }
@@ -547,16 +547,16 @@ fn the_process_own_group_is_given_and_is_not_reported() {
         .socket_group(own_group());
     assert!(
         options
-            .weakened()
+            .non_defaults()
             .iter()
             .all(|w| w.setting != "socket_group")
     );
     let listener = options.bind(&name).unwrap();
     assert_eq!(fs::metadata(name.path()).unwrap().gid(), own_group());
     assert_eq!(fs::metadata(name.path()).unwrap().mode() & 0o777, 0o660);
-    // Only the mode is a weakening here: the group is the process's own.
+    // Only the mode is a non-default setting here: the group is the process's own.
     let settings: Vec<_> = listener
-        .weakened()
+        .non_defaults()
         .iter()
         .map(|w| w.setting.to_string())
         .collect();
@@ -566,13 +566,13 @@ fn the_process_own_group_is_given_and_is_not_reported() {
 #[test]
 fn another_group_is_reported_with_what_it_is_and_what_the_default_is() {
     let options = Listener::options().socket_group(own_group() + 1);
-    let weakened = options.weakened();
-    let report = weakened
+    let non_defaults = options.non_defaults();
+    let report = non_defaults
         .iter()
         .find(|w| w.setting == "socket_group")
         .unwrap();
     assert_eq!(report.value, (own_group() + 1).to_string());
-    assert_eq!(report.strict, "the process's own group");
+    assert_eq!(report.default, "the process's own group");
 }
 
 #[test]
@@ -592,7 +592,7 @@ fn a_member_of_the_sockets_group_connects_and_a_stranger_is_refused() {
     assert_eq!((metadata.gid(), metadata.mode() & 0o777), (4242, 0o660));
     assert!(
         listener
-            .weakened()
+            .non_defaults()
             .iter()
             .any(|w| w.setting == "socket_group")
     );

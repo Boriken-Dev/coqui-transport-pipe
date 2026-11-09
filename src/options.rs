@@ -5,7 +5,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use core::time::Duration;
 
-use coqui_peer::Weakening;
+use coqui_peer::NonDefault;
 
 use crate::error::Error;
 use crate::listener::Listener;
@@ -42,10 +42,10 @@ impl core::fmt::Display for Group {
     }
 }
 
-/// How a [`Listener`] binds, on the strict side unless changed.
+/// How a [`Listener`] binds, on its defaults unless changed.
 ///
-/// A setting for the other platform has no effect there and is not listed as a weakening. Every
-/// setting looser than its default is listed by [`weakened`](Self::weakened) and logged at `debug`
+/// A setting for the other platform has no effect there and is not listed as a non-default setting. Every
+/// setting looser than its default is listed by [`non_defaults`](Self::non_defaults) and logged at `debug`
 /// through `tracing` when binding. The crate reports and does not judge: whether one was meant is the caller's to say.
 #[derive(Clone, Debug)]
 #[must_use]
@@ -84,7 +84,7 @@ impl Default for ListenerOptions {
 }
 
 impl ListenerOptions {
-    /// The strict defaults.
+    /// The defaults.
     pub fn new() -> Self {
         Self::default()
     }
@@ -131,7 +131,7 @@ impl ListenerOptions {
         self
     }
 
-    /// Unix: the socket's mode, from the moment the path exists, any of `0` to `0o7777`. `0o600` by default; another is reported by [`weakened`](Self::weakened), never refused.
+    /// Unix: the socket's mode, from the moment the path exists, any of `0` to `0o7777`. `0o600` by default; another is reported by [`non_defaults`](Self::non_defaults), never refused.
     pub fn socket_mode(mut self, mode: u32) -> Self {
         self.socket_mode = mode;
         self
@@ -140,7 +140,7 @@ impl ListenerOptions {
     /// Unix: the socket's group, by id, from the moment the path exists, so a mode with group access
     /// (`socket_mode(0o660)`) shares it with that group and no other. The process must be root or a
     /// member of the group, or the bind is [`Error::GroupDenied`]. A group other than the process's own is
-    /// reported by [`weakened`](Self::weakened). On Windows it is [`Error::InvalidOptions`].
+    /// reported by [`non_defaults`](Self::non_defaults). On Windows it is [`Error::InvalidOptions`].
     pub fn socket_group(mut self, group: u32) -> Self {
         self.socket_group = Some(Group::Id(group));
         self
@@ -188,25 +188,25 @@ impl ListenerOptions {
 
     /// Every setting looser than its default on this platform.
     #[must_use]
-    pub fn weakened(&self) -> Vec<Weakening> {
+    pub fn non_defaults(&self) -> Vec<NonDefault> {
         let mut list = Vec::new();
         if cfg!(windows) {
             if self.remote_clients {
-                list.push(Weakening::new("remote_clients", "allowed", "refused"));
+                list.push(NonDefault::new("remote_clients", "allowed", "refused"));
             }
             if let Some(sddl) = &self.security_descriptor {
-                list.push(Weakening::new(
+                list.push(NonDefault::new(
                     "security_descriptor",
                     sddl.clone(),
                     "the current user only",
                 ));
             }
             if !self.first_instance {
-                list.push(Weakening::new("first_instance", "false", "true"));
+                list.push(NonDefault::new("first_instance", "false", "true"));
             }
         } else {
             if self.socket_mode != DEFAULT_SOCKET_MODE {
-                list.push(Weakening::new(
+                list.push(NonDefault::new(
                     "socket_mode",
                     alloc::format!("{:o}", self.socket_mode),
                     alloc::format!("{DEFAULT_SOCKET_MODE:o}"),
@@ -216,14 +216,14 @@ impl ListenerOptions {
             if let Some(group) = &self.socket_group
                 && crate::sys::group_differs(group)
             {
-                list.push(Weakening::new(
+                list.push(NonDefault::new(
                     "socket_group",
                     group.to_string(),
                     "the process's own group",
                 ));
             }
             if self.shared_directory {
-                list.push(Weakening::new("shared_directory", "allowed", "refused"));
+                list.push(NonDefault::new("shared_directory", "allowed", "refused"));
             }
         }
         push_timeouts(&mut list, self.read_timeout, self.write_timeout);
@@ -235,28 +235,28 @@ impl ListenerOptions {
     /// setting that only loosens a check this platform does not make). A setting that would be stricter than
     /// the default is not here: it is [`Error::InvalidOptions`] at bind.
     #[must_use]
-    pub fn not_applied(&self) -> Vec<Weakening> {
+    pub fn not_applied(&self) -> Vec<NonDefault> {
         self.unsupported().1
     }
 
     /// Whether a setting stricter than the default cannot be honoured here, and the ones meaningless here.
-    fn unsupported(&self) -> (bool, Vec<Weakening>) {
+    fn unsupported(&self) -> (bool, Vec<NonDefault>) {
         let mut refuse = false;
         let mut ignored = Vec::new();
         if cfg!(windows) {
             refuse |= self.socket_group.is_some() || !self.remove_stale;
             if self.socket_mode != DEFAULT_SOCKET_MODE {
-                ignored.push(Weakening::new(
+                ignored.push(NonDefault::new(
                     "socket_mode",
                     alloc::format!("{:o}", self.socket_mode),
                     alloc::format!("{DEFAULT_SOCKET_MODE:o}"),
                 ));
             }
             if self.shared_directory {
-                ignored.push(Weakening::new("shared_directory", "allowed", "refused"));
+                ignored.push(NonDefault::new("shared_directory", "allowed", "refused"));
             }
             if self.backlog != DEFAULT_BACKLOG {
-                ignored.push(Weakening::new(
+                ignored.push(NonDefault::new(
                     "backlog",
                     self.backlog.to_string(),
                     DEFAULT_BACKLOG.to_string(),
@@ -266,17 +266,17 @@ impl ListenerOptions {
             refuse |=
                 self.security_descriptor.is_some() || self.max_instances != UNLIMITED_INSTANCES;
             if self.buffer_size != DEFAULT_BUFFER_SIZE {
-                ignored.push(Weakening::new(
+                ignored.push(NonDefault::new(
                     "buffer_size",
                     self.buffer_size.to_string(),
                     DEFAULT_BUFFER_SIZE.to_string(),
                 ));
             }
             if self.remote_clients {
-                ignored.push(Weakening::new("remote_clients", "allowed", "refused"));
+                ignored.push(NonDefault::new("remote_clients", "allowed", "refused"));
             }
             if !self.first_instance {
-                ignored.push(Weakening::new("first_instance", "false", "true"));
+                ignored.push(NonDefault::new("first_instance", "false", "true"));
             }
         }
         (refuse, ignored)
@@ -315,15 +315,15 @@ impl ListenerOptions {
         }
     }
 
-    pub(crate) fn log_weakened(&self) {
-        log(&self.weakened());
+    pub(crate) fn log_non_defaults(&self) {
+        log(&self.non_defaults());
         log_not_applied(&self.not_applied());
     }
 }
 
 /// How [`Stream::connect`] connects.
 ///
-/// Every setting looser than its default is listed by [`weakened`](Self::weakened) and logged at
+/// Every setting looser than its default is listed by [`non_defaults`](Self::non_defaults) and logged at
 /// `debug` through `tracing` when connecting.
 #[derive(Clone, Debug)]
 #[must_use]
@@ -346,7 +346,7 @@ impl Default for ConnectOptions {
 }
 
 impl ConnectOptions {
-    /// The strict defaults.
+    /// The defaults.
     pub fn new() -> Self {
         Self::default()
     }
@@ -383,20 +383,24 @@ impl ConnectOptions {
     /// Settings changed from their default that this platform cannot honour: `allow_impersonation` on Unix,
     /// where there is no impersonation level to raise. Reported, never dropped.
     #[must_use]
-    pub fn not_applied(&self) -> Vec<Weakening> {
+    pub fn not_applied(&self) -> Vec<NonDefault> {
         let mut list = Vec::new();
         if cfg!(unix) && self.impersonation {
-            list.push(Weakening::new("impersonation", "allowed", "refused"));
+            list.push(NonDefault::new("impersonation", "allowed", "refused"));
         }
         list
     }
 
     /// Every setting looser than its default on this platform.
     #[must_use]
-    pub fn weakened(&self) -> Vec<Weakening> {
+    pub fn non_defaults(&self) -> Vec<NonDefault> {
         let mut list = Vec::new();
         if cfg!(windows) && self.impersonation {
-            list.push(Weakening::new("impersonation", "allowed", "identification"));
+            list.push(NonDefault::new(
+                "impersonation",
+                "allowed",
+                "identification",
+            ));
         }
         push_timeouts(&mut list, self.read_timeout, self.write_timeout);
         list
@@ -419,8 +423,8 @@ impl ConnectOptions {
         }
     }
 
-    pub(crate) fn log_weakened(&self) {
-        log(&self.weakened());
+    pub(crate) fn log_non_defaults(&self) {
+        log(&self.non_defaults());
         log_not_applied(&self.not_applied());
     }
 }
@@ -429,13 +433,13 @@ fn timeouts_are_valid(read: Option<Duration>, write: Option<Duration>) -> bool {
     read != Some(Duration::ZERO) && write != Some(Duration::ZERO)
 }
 
-fn push_timeouts(list: &mut Vec<Weakening>, read: Option<Duration>, write: Option<Duration>) {
-    let strict = alloc::format!("{DEFAULT_IO_TIMEOUT:?}");
+fn push_timeouts(list: &mut Vec<NonDefault>, read: Option<Duration>, write: Option<Duration>) {
+    let default = alloc::format!("{DEFAULT_IO_TIMEOUT:?}");
     if read.is_none_or(|limit| limit > DEFAULT_IO_TIMEOUT) {
-        list.push(Weakening::new("read_timeout", show(read), strict.clone()));
+        list.push(NonDefault::new("read_timeout", show(read), default.clone()));
     }
     if write.is_none_or(|limit| limit > DEFAULT_IO_TIMEOUT) {
-        list.push(Weakening::new("write_timeout", show(write), strict));
+        list.push(NonDefault::new("write_timeout", show(write), default));
     }
 }
 
@@ -443,23 +447,23 @@ fn show(timeout: Option<Duration>) -> alloc::string::String {
     timeout.map_or_else(|| "none".to_string(), |limit| alloc::format!("{limit:?}"))
 }
 
-fn log_not_applied(list: &[Weakening]) {
+fn log_not_applied(list: &[NonDefault]) {
     for ignored in list {
         tracing::debug!(
             setting = %ignored.setting,
             value = %ignored.value,
-            default = %ignored.strict,
+            default = %ignored.default,
             "a pipe setting has no effect on this platform"
         );
     }
 }
 
-fn log(list: &[Weakening]) {
+fn log(list: &[NonDefault]) {
     for weaker in list {
         tracing::debug!(
             setting = %weaker.setting,
             value = %weaker.value,
-            strict = %weaker.strict,
+            default = %weaker.default,
             "a pipe setting is looser than its default"
         );
     }

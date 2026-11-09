@@ -358,7 +358,7 @@ fn a_meaningless_setting_is_refused_and_a_weak_one_is_not() {
         .bind(&place.name)
         .unwrap();
     let names: Vec<_> = listener
-        .weakened()
+        .non_defaults()
         .iter()
         .map(|weaker| weaker.setting.as_str())
         .collect();
@@ -366,9 +366,9 @@ fn a_meaningless_setting_is_refused_and_a_weak_one_is_not() {
 }
 
 #[test]
-fn the_strict_defaults_list_nothing_as_weakened() {
-    assert!(ListenerOptions::new().weakened().is_empty());
-    assert!(ConnectOptions::new().weakened().is_empty());
+fn the_defaults_list_nothing_as_non_default() {
+    assert!(ListenerOptions::new().non_defaults().is_empty());
+    assert!(ConnectOptions::new().non_defaults().is_empty());
 }
 
 #[test]

@@ -10,20 +10,20 @@ package and is self-contained. Development documentation lives with the source a
 | `tokio` | `tokio` (`net`, `io-util`, `time`), `coqui-peer/tokio`, `coqui-transport/tokio` | module `asynch` | off |
 | `channel` | nothing | `Stream: coqui_transport::Split`, with `ReadHalf` and `WriteHalf`, so `StreamChannel::start` runs on a stream | off |
 
-MSRV Rust 1.89. A default build depends on `coqui-peer` (by git revision, `1f00bfe`), `coqui-transport` (by git
-revision, `82563e2`, no features), `tracing`, on Windows `windows-sys`, and on Unix `socket2` and `libc`. Version
+MSRV Rust 1.89. A default build depends on `coqui-peer` (by git revision, `b6aa1f4`), `coqui-transport` (by git
+revision, `cb11ff2`, no features), `tracing`, on Windows `windows-sys`, and on Unix `socket2` and `libc`. Version
 `0.0.0-alpha.0`, unreleased: depend on a git revision, and name the same `coqui-peer` and `coqui-transport`
 revisions if you use them directly. This is a transport of `coqui-peer` and of `coqui-transport`, not a method: it
 proves no key, and a method runs over it.
 
 Imports: the crate root holds `PipeName`, `Listener`, `ListenerOptions`, `Stream`, `ConnectOptions`,
 `OsIdentity`, `current_user`, `Connector`, `Error`, `ReadHalf` and `WriteHalf` (feature `channel`), the
-`DEFAULT_` constants, and re-exports of `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `Weakening` (the report
-every `weakened()` and `not_applied()` returns: `setting`, `value`, `strict`). One public module: `asynch` (feature `tokio`).
+`DEFAULT_` constants, and re-exports of `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault` (the report
+every `non_defaults()` and `not_applied()` returns: `setting`, `value`, `default`). One public module: `asynch` (feature `tokio`).
 
 `unsafe` only for the operating system's calls, in `src/sys/windows.rs` and `src/sys/unix_os.rs`; a test
 lists them. No process-wide state. A library prints nothing: a setting looser than its default is
-returned by `weakened()` (what, its default and its value) and logged at `debug` through `tracing`, never
+returned by `non_defaults()` (what, its default and its value) and logged at `debug` through `tracing`, never
 warned: the crate reports and the caller decides. Nothing reads a file or an environment
 variable unless the caller asks: `PipeName::named` and parsing `pipe:NAME` read two on Unix.
 
@@ -70,27 +70,27 @@ impl Listener {
     pub fn accept(&self) -> Result<Stream, Error>;                                        // waits forever
     pub fn accept_timeout(&self, timeout: Option<Duration>) -> Result<Stream, Error>;     // Error::TimedOut; the listener goes on
     pub fn name(&self) -> &PipeName;
-    pub fn weakened(&self) -> &[Weakening];
-    pub fn not_applied(&self) -> &[Weakening];
+    pub fn non_defaults(&self) -> &[NonDefault];
+    pub fn not_applied(&self) -> &[NonDefault];
 }
 pub struct ListenerOptions;   // Clone, Debug, Default = new(), must_use; every method takes and returns self but the last two
 impl ListenerOptions {
     pub fn new() -> ListenerOptions;
-    pub fn allow_remote_clients(self, bool);            // Windows; default false: PIPE_REJECT_REMOTE_CLIENTS. Weakening
-    pub fn security_descriptor(self, sddl: impl Into<String>);   // Windows; default: this user alone. Weakening
-    pub fn first_instance(self, bool);                  // Windows; default true: FILE_FLAG_FIRST_PIPE_INSTANCE. Weakening
+    pub fn allow_remote_clients(self, bool);            // Windows; default false: PIPE_REJECT_REMOTE_CLIENTS. NonDefault
+    pub fn security_descriptor(self, sddl: impl Into<String>);   // Windows; default: this user alone. NonDefault
+    pub fn first_instance(self, bool);                  // Windows; default true: FILE_FLAG_FIRST_PIPE_INSTANCE. NonDefault
     pub fn max_instances(self, u32);                    // Windows; 2..=254, 255 (default) is the system's own limit
     pub fn buffer_size(self, u32);                      // Windows; each direction, default DEFAULT_BUFFER_SIZE
-    pub fn socket_mode(self, u32);                      // Unix; default 0o600, any of 0..=0o7777. Another is reported by weakened(), never refused
-    pub fn socket_group(self, gid: u32);                // Unix; default the process's own. Another is a weakening
+    pub fn socket_mode(self, u32);                      // Unix; default 0o600, any of 0..=0o7777. Another is reported by non_defaults(), never refused
+    pub fn socket_group(self, gid: u32);                // Unix; default the process's own. Another is a non-default setting
     pub fn socket_group_name(self, name: impl Into<String>);   // Unix; resolved at bind
-    pub fn allow_shared_directory(self, bool);          // Unix; default false. Weakening
+    pub fn allow_shared_directory(self, bool);          // Unix; default false. NonDefault
     pub fn remove_stale(self, bool);                    // Unix; default true
     pub fn backlog(self, i32);                          // Unix; above 0, default DEFAULT_BACKLOG
-    pub fn read_timeout(self, Option<Duration>);        // accepted streams; default Some(DEFAULT_IO_TIMEOUT); longer is a weakening
+    pub fn read_timeout(self, Option<Duration>);        // accepted streams; default Some(DEFAULT_IO_TIMEOUT); longer is a non-default setting
     pub fn write_timeout(self, Option<Duration>);       // the same
-    pub fn weakened(&self) -> Vec<Weakening>;           // looser than the default, on this platform
-    pub fn not_applied(&self) -> Vec<Weakening>;        // changed from the default and meaningless on this platform
+    pub fn non_defaults(&self) -> Vec<NonDefault>;           // looser than the default, on this platform
+    pub fn not_applied(&self) -> Vec<NonDefault>;        // changed from the default and meaningless on this platform
     pub fn bind(self, name: &PipeName) -> Result<Listener, Error>;   // Error::InvalidOptions for what means nothing
 }
 pub const DEFAULT_IO_TIMEOUT: Duration;      // 30 s
@@ -101,7 +101,7 @@ pub const DEFAULT_SOCKET_MODE: u32;          // 0o600
 ```
 
 **Reporting, not judging.** Whether a looser setting was meant is the caller's to say: the crate never warns. Every
-setting looser than its default is returned by `weakened()` (on the options, the listener, `ConnectOptions`) and logged at
+setting looser than its default is returned by `non_defaults()` (on the options, the listener, `ConnectOptions`) and logged at
 `debug`. A setting changed from its default that this platform cannot honour is never dropped silently: one that would
 be stricter than the default is `Error::InvalidOptions` at `bind` (Windows: `socket_group`, `remove_stale(false)`; Unix:
 `security_descriptor`, `max_instances` below 255), one that is meaningless here is returned by `not_applied()` (Windows:
@@ -137,7 +137,7 @@ name is never free while the listener lives. Callers of `accept` on one listener
 `socket_group` (or `socket_group_name`, looked up at bind) is for a socket shared with a group, as `/run/canoa/<user>.sock`
 owned by the user and the group `canoa` with `socket_mode(0o660)`: a member connects, anyone else is refused by the mode. The
 process must be root or a member of the group: otherwise `Error::GroupDenied`, refused before the lock or the path is
-touched; a name no group has is `Error::UnknownGroup`. A group other than the process's own is in `weakened()`. On
+touched; a name no group has is `Error::UnknownGroup`. A group other than the process's own is in `non_defaults()`. On
 Windows it is `Error::InvalidOptions`.
 
 Dropping the listener removes the path if it is still this socket.
@@ -158,11 +158,11 @@ pub struct ConnectOptions;   // Clone, Debug, Default = new(), must_use
 impl ConnectOptions {
     pub fn new() -> ConnectOptions;
     pub fn timeout(self, Duration);                 // default DEFAULT_CONNECT_TIMEOUT: for a free instance or a place in the queue
-    pub fn allow_impersonation(self, bool);         // Windows; default false: SECURITY_IDENTIFICATION. Weakening
-    pub fn read_timeout(self, Option<Duration>);    // default Some(DEFAULT_IO_TIMEOUT); longer is a weakening
+    pub fn allow_impersonation(self, bool);         // Windows; default false: SECURITY_IDENTIFICATION. NonDefault
+    pub fn read_timeout(self, Option<Duration>);    // default Some(DEFAULT_IO_TIMEOUT); longer is a non-default setting
     pub fn write_timeout(self, Option<Duration>);   // the same
-    pub fn weakened(&self) -> Vec<Weakening>;
-    pub fn not_applied(&self) -> Vec<Weakening>;    // Unix: allow_impersonation(true), which does nothing there
+    pub fn non_defaults(&self) -> Vec<NonDefault>;
+    pub fn not_applied(&self) -> Vec<NonDefault>;    // Unix: allow_impersonation(true), which does nothing there
     pub fn connect(self, name: &PipeName) -> Result<Stream, Error>;
 }
 ```
@@ -221,7 +221,7 @@ impl Listener {
     pub fn bind_with(name: &PipeName, options: ListenerOptions) -> Result<Listener, Error>;
     pub async fn accept(&mut self) -> Result<Stream, Error>;   // cancelling loses nothing
     pub fn name(&self) -> &PipeName;
-    pub fn weakened(&self) -> &[Weakening];
+    pub fn non_defaults(&self) -> &[NonDefault];
 }
 pub struct Stream;     // AsyncRead + AsyncWrite + Unpin + Send
 impl Stream {

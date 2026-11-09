@@ -26,7 +26,7 @@ mod stream;
 mod sys;
 
 pub use connector::Connector;
-pub use coqui_peer::{MessageTransport, ReadTimeout, Weakening, WriteTimeout};
+pub use coqui_peer::{MessageTransport, NonDefault, ReadTimeout, WriteTimeout};
 pub use error::Error;
 #[cfg(feature = "channel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "channel")))]

@@ -46,7 +46,7 @@ impl Stream {
 
     pub(crate) fn with_options(name: &PipeName, options: ConnectOptions) -> Result<Self, Error> {
         options.check()?;
-        options.log_weakened();
+        options.log_non_defaults();
         Ok(Self {
             inner: sys::Stream::connect(name, &options)?,
         })
