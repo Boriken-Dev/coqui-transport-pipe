@@ -35,8 +35,8 @@ pub use identity::{OsIdentity, current_user};
 pub use listener::Listener;
 pub use name::PipeName;
 pub use options::{
-    ConnectOptions, DEFAULT_BACKLOG, DEFAULT_BUFFER_SIZE, DEFAULT_CONNECT_TIMEOUT,
-    DEFAULT_IO_TIMEOUT, DEFAULT_SOCKET_MODE, ListenerOptions,
+    ConnectBuilder, ConnectSettings, DEFAULT_BACKLOG, DEFAULT_BUFFER_SIZE, DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_IO_TIMEOUT, DEFAULT_SOCKET_MODE, ListenerBuilder, ListenerSettings,
 };
 pub use stream::Stream;
 

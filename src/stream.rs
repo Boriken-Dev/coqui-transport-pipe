@@ -9,7 +9,7 @@ use coqui_peer::{ReadTimeout, WriteTimeout};
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::ConnectOptions;
+use crate::options::{ConnectBuilder, ConnectSettings};
 use crate::sys;
 
 /// One connection over a pipe or a socket: bytes in order, both ways, between two processes.
@@ -25,7 +25,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Connects to `name` with [`ConnectOptions`]'s defaults: at most 5 s to wait for room, and 30 s
+    /// Connects to `name` with every setting at its default: at most 5 s to wait for room, and 30 s
     /// bounds on each read and write. On Windows the server can learn who this client is and cannot
     /// act as it.
     ///
@@ -36,15 +36,15 @@ impl Stream {
     ///
     /// [`Error::NotListening`], [`Error::AccessDenied`], [`Error::TimedOut`], or [`Error::Io`].
     pub fn connect(name: &PipeName) -> Result<Self, Error> {
-        Self::with_options(name, ConnectOptions::new())
+        Self::with_settings(name, ConnectSettings::new())
     }
 
-    /// Settings for [`connect`](Self::connect).
-    pub fn options() -> ConnectOptions {
-        ConnectOptions::new()
+    /// A builder for a connection to `name`, with every setting at its default.
+    pub fn builder(name: &PipeName) -> ConnectBuilder {
+        ConnectBuilder::new(name)
     }
 
-    pub(crate) fn with_options(name: &PipeName, options: ConnectOptions) -> Result<Self, Error> {
+    pub(crate) fn with_settings(name: &PipeName, options: ConnectSettings) -> Result<Self, Error> {
         options.check()?;
         options.log_non_defaults();
         Ok(Self {

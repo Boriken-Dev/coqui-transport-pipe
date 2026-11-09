@@ -7,7 +7,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use coqui_transport_pipe::{
-    ConnectOptions, Error, Listener, ListenerOptions, ReadTimeout, Stream, WriteTimeout,
+    ConnectSettings, Error, Listener, ListenerSettings, ReadTimeout, Stream, WriteTimeout,
     current_user,
 };
 use support::place;
@@ -26,8 +26,8 @@ fn pair(tag: &str) -> (support::Place, Listener, Stream, Stream) {
 fn handles_are_send_and_sync() {
     assert_send_sync::<Listener>();
     assert_send_sync::<Stream>();
-    assert_send_sync::<ListenerOptions>();
-    assert_send_sync::<ConnectOptions>();
+    assert_send_sync::<ListenerSettings>();
+    assert_send_sync::<ConnectSettings>();
 }
 
 #[test]
@@ -181,9 +181,9 @@ fn a_zero_timeout_is_refused_as_it_is_on_a_socket() {
 #[test]
 fn a_write_timeout_ends_a_write_the_peer_never_takes() {
     let place = place("write-timeout");
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .buffer_size(4096)
-        .bind(&place.name)
+        .build()
         .unwrap();
     let mut client = Stream::connect(&place.name).unwrap();
     let _server = listener.accept().unwrap();
@@ -334,28 +334,23 @@ fn an_identity_outlives_the_peer_that_left() {
 fn a_meaningless_setting_is_refused_and_a_weak_one_is_not() {
     let place = place("options");
     for options in [
-        Listener::options().max_instances(1),
-        Listener::options().max_instances(256),
-        Listener::options().socket_mode(0o10000),
-        Listener::options().backlog(0),
-        Listener::options().read_timeout(Some(Duration::ZERO)),
-        Listener::options().write_timeout(Some(Duration::ZERO)),
+        Listener::builder(&place.name).max_instances(1),
+        Listener::builder(&place.name).max_instances(256),
+        Listener::builder(&place.name).socket_mode(0o10000),
+        Listener::builder(&place.name).backlog(0),
+        Listener::builder(&place.name).read_timeout(Duration::ZERO),
+        Listener::builder(&place.name).write_timeout(Duration::ZERO),
     ] {
-        assert!(matches!(
-            options.bind(&place.name),
-            Err(Error::InvalidOptions)
-        ));
+        assert!(matches!(options.build(), Err(Error::InvalidOptions)));
     }
     assert!(matches!(
-        Stream::options()
-            .timeout(Duration::ZERO)
-            .connect(&place.name),
+        Stream::builder(&place.name).timeout(Duration::ZERO).build(),
         Err(Error::InvalidOptions)
     ));
-    let listener = Listener::options()
-        .read_timeout(None)
-        .write_timeout(None)
-        .bind(&place.name)
+    let listener = Listener::builder(&place.name)
+        .read_timeout(Duration::MAX)
+        .write_timeout(Duration::MAX)
+        .build()
         .unwrap();
     let names: Vec<_> = listener
         .non_defaults()
@@ -367,8 +362,8 @@ fn a_meaningless_setting_is_refused_and_a_weak_one_is_not() {
 
 #[test]
 fn the_defaults_list_nothing_as_non_default() {
-    assert!(ListenerOptions::new().non_defaults().is_empty());
-    assert!(ConnectOptions::new().non_defaults().is_empty());
+    assert!(ListenerSettings::new().non_defaults().is_empty());
+    assert!(ConnectSettings::new().non_defaults().is_empty());
 }
 
 #[test]
@@ -388,9 +383,9 @@ fn a_bound_too_long_for_the_clock_waits_as_none_would() {
 
     let name = place.name.clone();
     let connecting = thread::spawn(move || {
-        Stream::options()
+        Stream::builder(&name)
             .timeout(Duration::MAX)
-            .connect(&name)
+            .build()
             .map(drop)
     });
     listener.accept_timeout(Some(Duration::MAX)).unwrap();

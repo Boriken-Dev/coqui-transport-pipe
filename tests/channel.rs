@@ -175,9 +175,9 @@ fn a_message_above_the_receive_bound_ends_the_channel_at_both_ends() {
 #[test]
 fn a_peer_that_takes_nothing_for_the_send_limit_ends_the_channel() {
     let place = place("stall");
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .buffer_size(4096)
-        .bind(&place.name)
+        .build()
         .unwrap();
     let client = StreamChannel::builder(LengthPrefix::u32_be())
         .send_limit(Duration::from_millis(200))
@@ -230,7 +230,7 @@ fn the_connector_gives_its_timeout_to_the_connect() {
 
     // Nothing accepts, so the queue fills (on Windows, the instances) and a connect waits for room.
     let place = place("full");
-    let _listener = Listener::options().backlog(1).bind(&place.name).unwrap();
+    let _listener = Listener::builder(&place.name).backlog(1).build().unwrap();
     let connector = Connector::new(place.name.clone());
     let mut held = Vec::new();
     for _ in 0..300 {

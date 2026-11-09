@@ -19,7 +19,7 @@ use crate::deadline;
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::{ConnectOptions, ListenerOptions};
+use crate::options::{ConnectSettings, ListenerSettings};
 use crate::sys;
 
 /// How often a wait for a free instance or a place in the queue looks again.
@@ -53,21 +53,16 @@ pub struct Listener {
 }
 
 impl Listener {
-    /// Binds `name` with [`ListenerOptions`]'s defaults.
+    /// Binds `name` with every setting at its default: `crate::Listener::builder(name).build_async()`.
     ///
     /// # Errors
     ///
     /// As [`Listener::bind`](crate::Listener::bind).
     pub fn bind(name: &PipeName) -> Result<Self, Error> {
-        Self::bind_with(name, ListenerOptions::new())
+        Self::with_settings(name, ListenerSettings::new())
     }
 
-    /// Binds `name` with `options`. Its timeouts belong to blocking streams and mean nothing here.
-    ///
-    /// # Errors
-    ///
-    /// As [`ListenerOptions::bind`].
-    pub fn bind_with(name: &PipeName, options: ListenerOptions) -> Result<Self, Error> {
+    pub(crate) fn with_settings(name: &PipeName, options: ListenerSettings) -> Result<Self, Error> {
         options.check()?;
         options.log_non_defaults();
         let non_defaults = options.non_defaults();
@@ -95,14 +90,14 @@ impl Listener {
         &self.name
     }
 
-    /// Every setting this was bound with that is looser than its default.
+    /// Every setting this was bound with that differs from its default and means something on this platform.
     #[must_use]
     pub fn non_defaults(&self) -> &[NonDefault] {
         &self.non_defaults
     }
 
     /// Every setting this was bound with that this platform could not honour, as
-    /// [`ListenerOptions::not_applied`].
+    /// [`ListenerSettings::not_applied`].
     #[must_use]
     pub fn not_applied(&self) -> &[NonDefault] {
         &self.not_applied
@@ -111,7 +106,7 @@ impl Listener {
 
 #[cfg(unix)]
 impl Waiting {
-    fn bind(name: &PipeName, options: &ListenerOptions) -> Result<Self, Error> {
+    fn bind(name: &PipeName, options: &ListenerSettings) -> Result<Self, Error> {
         let (socket, bound) = sys::bind_socket(name, options)?;
         Ok(Self {
             socket: tokio::net::UnixListener::from_std(socket)?,
@@ -130,7 +125,7 @@ impl Waiting {
 
 #[cfg(windows)]
 impl Waiting {
-    fn bind(name: &PipeName, options: &ListenerOptions) -> Result<Self, Error> {
+    fn bind(name: &PipeName, options: &ListenerSettings) -> Result<Self, Error> {
         let instances = sys::Instances::new(name, options)?;
         let (pending, spare) = instances.first_two()?;
         Ok(Self {
@@ -185,22 +180,19 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Connects to `name` with [`ConnectOptions`]'s defaults.
+    /// Connects to `name` with every setting at its default: `Stream::builder(name).build_async()`.
     ///
     /// # Errors
     ///
     /// As [`Stream::connect`](crate::Stream::connect).
     pub async fn connect(name: &PipeName) -> Result<Self, Error> {
-        Self::connect_with(name, ConnectOptions::new()).await
+        Self::with_settings(name, ConnectSettings::new()).await
     }
 
-    /// Connects to `name` with `options`. Its read and write timeouts belong to blocking streams and
-    /// mean nothing here.
-    ///
-    /// # Errors
-    ///
-    /// As [`ConnectOptions::connect`].
-    pub async fn connect_with(name: &PipeName, options: ConnectOptions) -> Result<Self, Error> {
+    pub(crate) async fn with_settings(
+        name: &PipeName,
+        options: ConnectSettings,
+    ) -> Result<Self, Error> {
         options.check()?;
         options.log_non_defaults();
         let deadline = deadline::after(options.timeout);
@@ -236,7 +228,7 @@ impl Inner {
     #[cfg(unix)]
     fn try_connect(
         name: &PipeName,
-        _options: &ConnectOptions,
+        _options: &ConnectSettings,
         deadline: Option<Instant>,
     ) -> Result<Option<Self>, Error> {
         match sys::try_connect(name.path(), deadline)? {
@@ -254,7 +246,7 @@ impl Inner {
     #[cfg(windows)]
     fn try_connect(
         name: &PipeName,
-        options: &ConnectOptions,
+        options: &ConnectSettings,
         _deadline: Option<Instant>,
     ) -> Result<Option<Self>, Error> {
         let path = sys::path_of(name)?;
@@ -322,9 +314,9 @@ impl AsyncWrite for Stream {
     }
 }
 
-/// Connects to one [`PipeName`] with [`ConnectOptions`], as a `coqui_transport::asynch::AsyncConnector`.
+/// Connects to one [`PipeName`] with [`ConnectSettings`], as a `coqui_transport::asynch::AsyncConnector`.
 ///
-/// `connect`'s timeout replaces the options' own. The listener has no such form: `AsyncListener::accept`
+/// `connect`'s timeout replaces the settings' own. The listener has no such form: `AsyncListener::accept`
 /// takes `&self`, and [`Listener::accept`] needs `&mut self`.
 #[derive(Clone, Debug)]
 #[must_use]
@@ -333,7 +325,7 @@ pub struct Connector {
 }
 
 impl Connector {
-    /// A connector for `name` with [`ConnectOptions`]'s defaults.
+    /// A connector for `name` with every setting at its default.
     pub fn new(name: PipeName) -> Self {
         Self {
             inner: crate::Connector::new(name),
@@ -341,8 +333,8 @@ impl Connector {
     }
 
     /// The settings to connect with.
-    pub fn with_options(mut self, options: ConnectOptions) -> Self {
-        self.inner = self.inner.with_options(options);
+    pub fn settings(mut self, settings: ConnectSettings) -> Self {
+        self.inner = self.inner.settings(settings);
         self
     }
 
@@ -358,9 +350,9 @@ impl AsyncConnector for Connector {
     type Error = Error;
 
     fn connect(&self, timeout: core::time::Duration) -> BoxFuture<'_, Result<Stream, Error>> {
-        Box::pin(Stream::connect_with(
+        Box::pin(Stream::with_settings(
             &self.inner.name,
-            self.inner.options.clone().timeout(timeout),
+            self.inner.settings.within(timeout),
         ))
     }
 }

@@ -75,7 +75,7 @@ impl PipeName {
 
     /// The pipe `name` on `host`, `\\HOST\pipe\NAME`, which a client reaches through the operating
     /// system's file sharing. A listener refuses such clients unless
-    /// [`ListenerOptions::allow_remote_clients`](crate::ListenerOptions::allow_remote_clients).
+    /// [`ListenerBuilder::remote_clients`](crate::ListenerBuilder::remote_clients).
     ///
     /// # Errors
     ///

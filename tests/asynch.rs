@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use coqui_peer::asynch::{drive_stream, drive_stream_until};
 use coqui_peer::{DriveError, Method};
 use coqui_peer_noise::{Identity as NoiseIdentity, Noise, Trust as NoiseTrust};
-use coqui_peer_tls::{Identity as TlsIdentity, Pins, Tls, Trust as TlsTrust};
+use coqui_peer_tls::{
+    ClientAuth, ClientBuilder, Identity as TlsIdentity, Pins, ServerBuilder, Tls, Trust as TlsTrust,
+};
 use coqui_transport_pipe::asynch::{Listener, Stream};
 use coqui_transport_pipe::{Error, current_user};
 use support::place;
@@ -31,8 +33,12 @@ fn noises() -> (Noise, Noise, coqui_peer::PeerId, coqui_peer::PeerId) {
     );
     let (id_a, id_b) = (a.peer_id(), b.peer_id());
     (
-        Noise::new(a).with_responders(NoiseTrust::pinned([id_b])),
-        Noise::new(b).with_initiators(NoiseTrust::pinned([id_a])),
+        Noise::builder(a)
+            .responders(NoiseTrust::pinned([id_b]))
+            .build(),
+        Noise::builder(b)
+            .initiators(NoiseTrust::pinned([id_a]))
+            .build(),
         id_a,
         id_b,
     )
@@ -176,11 +182,18 @@ async fn tls_proves_both_certificates_over_a_stream() {
         TlsIdentity::generate().unwrap(),
     );
     let pin = |identity: &TlsIdentity| TlsTrust::Pinned(Pins::fixed([identity.fingerprint()]));
-    let client_method = Tls::new().with_client(Arc::new(
-        coqui_peer_tls::client_config(&a, &pin(&b), &[]).unwrap(),
+    let client_method = Tls::new().client(Arc::new(
+        ClientBuilder::new(pin(&b))
+            .identity(&a)
+            .build()
+            .unwrap()
+            .config,
     ));
-    let server_method = Tls::new().with_server(Arc::new(
-        coqui_peer_tls::server_config(&b, &pin(&a), &[]).unwrap(),
+    let server_method = Tls::new().server(Arc::new(
+        ServerBuilder::new(&b, ClientAuth::Required(pin(&a)))
+            .build()
+            .unwrap()
+            .config,
     ));
     let (_place, _listener, mut client, mut server) = pair("tls-stream").await;
     let answering = tokio::spawn(async move {
@@ -211,7 +224,7 @@ async fn a_deadline_is_met_on_a_silent_peer() {
 
 #[cfg(windows)]
 mod windows {
-    use coqui_transport_pipe::{ListenerOptions, NonDefault, PipeName};
+    use coqui_transport_pipe::{NonDefault, PipeName};
 
     use super::*;
 
@@ -229,10 +242,9 @@ mod windows {
     #[tokio::test]
     async fn a_descriptor_that_shuts_out_its_own_user_is_refused_at_bind() {
         let place = place("shut-out");
-        let result = Listener::bind_with(
-            &place.name,
-            ListenerOptions::new().security_descriptor("D:P"),
-        );
+        let result = coqui_transport_pipe::Listener::builder(&place.name)
+            .security_descriptor("D:P")
+            .build_async();
         assert!(
             matches!(result, Err(Error::InvalidDescriptor)),
             "{result:?}"
@@ -242,14 +254,13 @@ mod windows {
     #[tokio::test]
     async fn non_default_settings_are_listed() {
         let place = place("non_defaults");
-        let listener = Listener::bind_with(
-            &place.name,
-            ListenerOptions::new().allow_remote_clients(true),
-        )
-        .unwrap();
+        let listener = coqui_transport_pipe::Listener::builder(&place.name)
+            .remote_clients(true)
+            .build_async()
+            .unwrap();
         assert_eq!(
             listener.non_defaults(),
-            [NonDefault::new("remote_clients", "allowed", "refused")]
+            [NonDefault::new("remote_clients", "true", "false")]
         );
     }
 }

@@ -244,9 +244,9 @@ fn a_process_of_this_user_below_the_listeners_integrity_level_is_refused_and_add
 #[test]
 fn a_descriptor_that_shuts_out_its_own_user_is_refused_at_bind() {
     let place = place("shut-out");
-    let result = Listener::options()
+    let result = Listener::builder(&place.name)
         .security_descriptor("D:P")
-        .bind(&place.name);
+        .build();
     assert!(
         matches!(result, Err(Error::InvalidDescriptor)),
         "{result:?}"
@@ -257,9 +257,9 @@ fn a_descriptor_that_shuts_out_its_own_user_is_refused_at_bind() {
 fn a_descriptor_holding_a_nul_is_refused() {
     let place = place("nul-descriptor");
     let me = current_user().unwrap();
-    let result = Listener::options()
+    let result = Listener::builder(&place.name)
         .security_descriptor(format!("D:P(A;;GA;;;{me})\0(D;;GA;;;WD)"))
-        .bind(&place.name);
+        .build();
     assert!(
         matches!(result, Err(Error::InvalidDescriptor)),
         "{result:?}"
@@ -294,17 +294,13 @@ fn every_later_instance_keeps_the_descriptor() {
 fn a_descriptor_of_ones_own_says_who_else_is_let_in_and_is_listed_as_weaker() {
     let place = place("descriptor");
     let sddl = "D:(A;;GA;;;WD)";
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .security_descriptor(sddl)
-        .bind(&place.name)
+        .build()
         .unwrap();
     assert_eq!(
         listener.non_defaults(),
-        [NonDefault::new(
-            "security_descriptor",
-            sddl,
-            "the current user only"
-        )]
+        [NonDefault::new("security_descriptor", sddl, "unset")]
     );
     let client = as_restricted(|| Stream::connect(&place.name));
     assert!(client.is_ok(), "{client:?}");
@@ -313,9 +309,9 @@ fn a_descriptor_of_ones_own_says_who_else_is_let_in_and_is_listed_as_weaker() {
 #[test]
 fn a_descriptor_that_does_not_parse_is_refused() {
     let place = place("bad-descriptor");
-    let result = Listener::options()
+    let result = Listener::builder(&place.name)
         .security_descriptor("not a descriptor")
-        .bind(&place.name);
+        .build();
     assert!(
         matches!(result, Err(Error::InvalidDescriptor)),
         "{result:?}"
@@ -337,9 +333,9 @@ fn a_name_another_process_holds_is_refused() {
 fn turning_the_first_instance_off_joins_a_pipe_and_is_listed_as_weaker() {
     let place = place("join");
     let other = raw_pipe(&place.name, FILE_FLAG_OVERLAPPED).unwrap();
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .first_instance(false)
-        .bind(&place.name)
+        .build()
         .unwrap();
     assert_eq!(
         listener.non_defaults(),
@@ -400,13 +396,13 @@ fn a_client_through_file_sharing_is_refused_by_default() {
 #[test]
 fn a_remote_client_allowed_by_the_builder_connects_says_where_it_is_from_and_is_listed_as_weaker() {
     let place = place("remote-allowed");
-    let listener = Listener::options()
-        .allow_remote_clients(true)
-        .bind(&place.name)
+    let listener = Listener::builder(&place.name)
+        .remote_clients(true)
+        .build()
         .unwrap();
     assert_eq!(
         listener.non_defaults(),
-        [NonDefault::new("remote_clients", "allowed", "refused")]
+        [NonDefault::new("remote_clients", "true", "false")]
     );
     let client = Stream::connect(&local_name_for_loopback(&place.name)).unwrap();
     let server = listener
@@ -425,9 +421,9 @@ fn a_remote_client_allowed_by_the_builder_connects_says_where_it_is_from_and_is_
 fn level_a_server_gets(allow_impersonation: bool) -> i32 {
     let place = place("level");
     let server = raw_pipe(&place.name, 0).unwrap();
-    let mut client = Stream::options()
-        .allow_impersonation(allow_impersonation)
-        .connect(&place.name)
+    let mut client = Stream::builder(&place.name)
+        .impersonation(allow_impersonation)
+        .build()
         .unwrap();
     client.write_all(b"x").unwrap();
     let mut byte = 0u8;
@@ -487,7 +483,8 @@ fn a_server_can_identify_a_client_and_cannot_act_as_it() {
 #[test]
 fn a_client_can_choose_to_let_a_server_act_as_it_and_lists_it_as_weaker() {
     assert_eq!(level_a_server_gets(true), 2, "SecurityImpersonation");
-    let options = Stream::options().allow_impersonation(true);
+    let place = place("impersonation-listed");
+    let options = Stream::builder(&place.name).impersonation(true);
     assert_eq!(options.non_defaults()[0].setting, "impersonation");
 }
 
@@ -504,9 +501,9 @@ fn a_client_learns_who_owns_a_pipe_someone_else_could_have_made() {
 #[test]
 fn the_instance_limit_makes_an_accept_wait_until_a_connection_ends() {
     let place = place("instances");
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .max_instances(2)
-        .bind(&place.name)
+        .build()
         .unwrap();
     let first = Stream::connect(&place.name).unwrap();
     let served = listener
@@ -534,9 +531,9 @@ fn a_client_waits_for_a_free_instance_up_to_its_timeout() {
     let _taken = Stream::connect(&place.name).unwrap();
     let _next = Stream::connect(&place.name).unwrap();
     let started = std::time::Instant::now();
-    let result = Stream::options()
+    let result = Stream::builder(&place.name)
         .timeout(Duration::from_millis(150))
-        .connect(&place.name);
+        .build();
     assert!(matches!(result, Err(Error::TimedOut)), "{result:?}");
     assert!(started.elapsed() >= Duration::from_millis(140));
     let _first = listener.accept().unwrap();
@@ -550,9 +547,9 @@ fn a_client_waits_for_a_free_instance_up_to_its_timeout() {
 #[test]
 fn a_write_past_the_room_that_times_out_refuses_every_later_write() {
     let place = place("torn");
-    let listener = Listener::options()
+    let listener = Listener::builder(&place.name)
         .buffer_size(4096)
-        .bind(&place.name)
+        .build()
         .unwrap();
     let mut client = Stream::connect(&place.name).unwrap();
     let mut server = listener.accept().unwrap();

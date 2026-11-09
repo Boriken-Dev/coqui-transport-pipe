@@ -7,32 +7,32 @@ use core::time::Duration;
 use crate::error::Error;
 use crate::listener::Listener;
 use crate::name::PipeName;
-use crate::options::ConnectOptions;
+use crate::options::ConnectSettings;
 use crate::stream::Stream;
 
-/// Connects to one [`PipeName`] with [`ConnectOptions`].
+/// Connects to one [`PipeName`] with [`ConnectSettings`].
 ///
-/// As a [`coqui_transport::Connector`], `connect`'s timeout replaces the options' own, and nothing
+/// As a [`coqui_transport::Connector`], `connect`'s timeout replaces the settings' own, and nothing
 /// proves who listens: see [`Stream::connect`].
 #[derive(Clone, Debug)]
 #[must_use]
 pub struct Connector {
     pub(crate) name: PipeName,
-    pub(crate) options: ConnectOptions,
+    pub(crate) settings: ConnectSettings,
 }
 
 impl Connector {
-    /// A connector for `name` with [`ConnectOptions`]'s defaults.
+    /// A connector for `name` with every setting at its default.
     pub fn new(name: PipeName) -> Self {
         Self {
             name,
-            options: ConnectOptions::new(),
+            settings: ConnectSettings::new(),
         }
     }
 
     /// The settings to connect with.
-    pub fn with_options(mut self, options: ConnectOptions) -> Self {
-        self.options = options;
+    pub fn settings(mut self, settings: ConnectSettings) -> Self {
+        self.settings = settings;
         self
     }
 
@@ -48,7 +48,7 @@ impl coqui_transport::Connector for Connector {
     type Error = Error;
 
     fn connect(&self, timeout: Duration) -> Result<Stream, Error> {
-        Stream::with_options(&self.name, self.options.clone().timeout(timeout))
+        Stream::with_settings(&self.name, self.settings.within(timeout))
     }
 }
 

@@ -48,7 +48,7 @@ use crate::deadline;
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::{ConnectOptions, ListenerOptions};
+use crate::options::{ConnectSettings, ListenerSettings};
 
 /// One `WriteFile` at most, so a timed wait measures the peer's progress, not the size of a message.
 const MAX_WRITE: usize = 64 * 1024;
@@ -217,17 +217,12 @@ impl Stream {
         })
     }
 
-    pub(crate) fn connect(name: &PipeName, options: &ConnectOptions) -> Result<Self, Error> {
+    pub(crate) fn connect(name: &PipeName, options: &ConnectSettings) -> Result<Self, Error> {
         let path = path_of(name)?;
         let deadline = deadline::after(options.timeout);
         loop {
             if let Some(handle) = open(&path, options.impersonation)? {
-                return Ok(Self::new(
-                    handle,
-                    false,
-                    options.read_timeout,
-                    options.write_timeout,
-                )?);
+                return Ok(Self::new(handle, false, options.read(), options.write())?);
             }
             if deadline::passed(deadline) {
                 return Err(Error::TimedOut);
@@ -492,7 +487,7 @@ impl Drop for Descriptor {
 }
 
 impl Instances {
-    pub(crate) fn new(name: &PipeName, options: &ListenerOptions) -> Result<Self, Error> {
+    pub(crate) fn new(name: &PipeName, options: &ListenerSettings) -> Result<Self, Error> {
         let sddl = match &options.security_descriptor {
             // The system would read up to the NUL, and the log would show the rest.
             Some(sddl) if sddl.contains('\0') => return Err(Error::InvalidDescriptor),
@@ -581,14 +576,14 @@ pub(crate) struct Listener {
 }
 
 impl Listener {
-    pub(crate) fn bind(name: &PipeName, options: &ListenerOptions) -> Result<Self, Error> {
+    pub(crate) fn bind(name: &PipeName, options: &ListenerSettings) -> Result<Self, Error> {
         let instances = Instances::new(name, options)?;
         let (pending, spare) = instances.first_two()?;
         Ok(Self {
             instances,
             waiting: Mutex::new(Waiting { pending, spare }),
-            read_timeout: options.read_timeout,
-            write_timeout: options.write_timeout,
+            read_timeout: options.read(),
+            write_timeout: options.write(),
         })
     }
 

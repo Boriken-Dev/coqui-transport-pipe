@@ -22,7 +22,7 @@ use crate::deadline;
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::{ConnectOptions, Group, ListenerOptions};
+use crate::options::{ConnectSettings, Group, ListenerSettings};
 
 /// One write at most. Linux applies a socket's send timeout to each wait for buffer room, so one large
 /// write to a peer reading slowly outlasts it many times over (32 MiB, 300 ms: 3 s and more).
@@ -56,15 +56,11 @@ impl Stream {
         Ok(Self { socket })
     }
 
-    pub(crate) fn connect(name: &PipeName, options: &ConnectOptions) -> Result<Self, Error> {
+    pub(crate) fn connect(name: &PipeName, options: &ConnectSettings) -> Result<Self, Error> {
         let deadline = deadline::after(options.timeout);
         loop {
             if let Some(socket) = try_connect(name.path(), deadline)? {
-                return Ok(Self::new(
-                    socket,
-                    options.read_timeout,
-                    options.write_timeout,
-                )?);
+                return Ok(Self::new(socket, options.read(), options.write())?);
             }
             if deadline::passed(deadline) {
                 return Err(Error::TimedOut);
@@ -336,7 +332,7 @@ impl Drop for PrivateDirectory {
 fn bind_privately(
     directory: &Path,
     path: &Path,
-    options: &ListenerOptions,
+    options: &ListenerSettings,
     group: Option<u32>,
 ) -> Result<Socket, Error> {
     let private = PrivateDirectory::create(directory)?;
@@ -374,11 +370,11 @@ fn resolve_group(group: &Group) -> Result<u32, Error> {
 
 /// The group the socket is to have, refused before anything is touched when this process could not
 /// give it.
-fn settable_group(options: &ListenerOptions) -> Result<Option<u32>, Error> {
-    let Some(group) = &options.socket_group else {
+fn settable_group(options: &ListenerSettings) -> Result<Option<u32>, Error> {
+    let Some(group) = options.group() else {
         return Ok(None);
     };
-    let id = resolve_group(group)?;
+    let id = resolve_group(&group)?;
     if may_use_group(id)? {
         Ok(Some(id))
     } else {
@@ -395,7 +391,7 @@ pub(crate) fn group_differs(group: &Group) -> bool {
 /// non-blocking mode and what removes its path.
 pub(crate) fn bind_socket(
     name: &PipeName,
-    options: &ListenerOptions,
+    options: &ListenerSettings,
 ) -> Result<(UnixListener, Bound), Error> {
     let file_name = name.path().file_name().ok_or(Error::InvalidName)?;
     let parent = match name.path().parent() {
@@ -435,12 +431,12 @@ pub(crate) struct Listener {
 }
 
 impl Listener {
-    pub(crate) fn bind(name: &PipeName, options: &ListenerOptions) -> Result<Self, Error> {
+    pub(crate) fn bind(name: &PipeName, options: &ListenerSettings) -> Result<Self, Error> {
         let (socket, bound) = bind_socket(name, options)?;
         Ok(Self {
             socket,
-            read_timeout: options.read_timeout,
-            write_timeout: options.write_timeout,
+            read_timeout: options.read(),
+            write_timeout: options.write(),
             _bound: bound,
         })
     }

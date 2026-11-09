@@ -21,15 +21,15 @@ pub enum Error {
     /// The path holds something other than a socket, which is never removed.
     NotASocket,
     /// A directory on the way to the socket can be written by others, so another user could replace
-    /// the socket; `ListenerOptions::allow_shared_directory` accepts that.
+    /// the socket; `ListenerBuilder::shared_directory` accepts that.
     SharedDirectory,
     /// A directory on the way to the socket belongs to another user, who could replace the socket;
-    /// `ListenerOptions::allow_shared_directory` accepts that.
+    /// `ListenerBuilder::shared_directory` accepts that.
     ForeignDirectory,
     /// The security descriptor text does not parse, holds a NUL, or does not let this user add
     /// instances of its own pipe.
     InvalidDescriptor,
-    /// No group has the name given to `ListenerOptions::socket_group_name`.
+    /// No group has the name given to `ListenerBuilder::socket_group_name`.
     UnknownGroup,
     /// This process is neither root nor a member of the group given for the socket, so it cannot give it
     /// that group.

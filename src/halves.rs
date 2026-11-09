@@ -59,6 +59,6 @@ impl Split for Stream {
         let reader = ReadHalf {
             stream: Arc::clone(&stream),
         };
-        Ok(Halves::new(reader, WriteHalf { stream }).with_interrupt(interrupt))
+        Ok(Halves::new(reader, WriteHalf { stream }).interrupt(interrupt))
     }
 }

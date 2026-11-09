@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 
 use coqui_peer::{DriveError, Method, drive_stream, drive_stream_until};
 use coqui_peer_noise::{Identity as NoiseIdentity, Noise, Trust as NoiseTrust};
-use coqui_peer_tls::{Identity as TlsIdentity, Pins, Tls, Trust as TlsTrust};
+use coqui_peer_tls::{
+    ClientAuth, ClientBuilder, Identity as TlsIdentity, Pins, ServerBuilder, Tls, Trust as TlsTrust,
+};
 use coqui_transport_pipe::{Listener, Stream};
 use support::place;
 
@@ -28,8 +30,12 @@ fn noises() -> (Noise, Noise, coqui_peer::PeerId, coqui_peer::PeerId) {
     );
     let (id_a, id_b) = (a.peer_id(), b.peer_id());
     (
-        Noise::new(a).with_responders(NoiseTrust::pinned([id_b])),
-        Noise::new(b).with_initiators(NoiseTrust::pinned([id_a])),
+        Noise::builder(a)
+            .responders(NoiseTrust::pinned([id_b]))
+            .build(),
+        Noise::builder(b)
+            .initiators(NoiseTrust::pinned([id_a]))
+            .build(),
         id_a,
         id_b,
     )
@@ -41,11 +47,18 @@ fn tlses() -> (Tls, Tls, coqui_peer::PeerId, coqui_peer::PeerId) {
         TlsIdentity::generate().unwrap(),
     );
     let pin = |identity: &TlsIdentity| TlsTrust::Pinned(Pins::fixed([identity.fingerprint()]));
-    let client = Tls::new().with_client(Arc::new(
-        coqui_peer_tls::client_config(&a, &pin(&b), &[]).unwrap(),
+    let client = Tls::new().client(Arc::new(
+        ClientBuilder::new(pin(&b))
+            .identity(&a)
+            .build()
+            .unwrap()
+            .config,
     ));
-    let server = Tls::new().with_server(Arc::new(
-        coqui_peer_tls::server_config(&b, &pin(&a), &[]).unwrap(),
+    let server = Tls::new().server(Arc::new(
+        ServerBuilder::new(&b, ClientAuth::Required(pin(&a)))
+            .build()
+            .unwrap()
+            .config,
     ));
     (client, server, a.fingerprint(), b.fingerprint())
 }
@@ -136,8 +149,12 @@ fn a_key_nobody_pinned_is_refused_over_a_pipe() {
         NoiseIdentity::generate().unwrap(),
         NoiseIdentity::generate().unwrap(),
     );
-    let initiator = Noise::new(stranger).with_responders(NoiseTrust::pinned([b.peer_id()]));
-    let responder = Noise::new(b).with_initiators(NoiseTrust::pinned([a.peer_id()]));
+    let initiator = Noise::builder(stranger)
+        .responders(NoiseTrust::pinned([b.peer_id()]))
+        .build();
+    let responder = Noise::builder(b)
+        .initiators(NoiseTrust::pinned([a.peer_id()]))
+        .build();
     let (_place, _listener, mut client, mut server) = connected("stranger");
     let answering =
         thread::spawn(move || drive_stream(responder.respond(None).unwrap(), &mut server).is_err());
