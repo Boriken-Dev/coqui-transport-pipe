@@ -31,7 +31,7 @@ See the [documentation](https://boriken-dev.github.io/coqui-transport-pipe/).
 - **`coqui-transport` channels**: a `Stream` is a `Split`, so `StreamChannel::start(stream, codec)` is a channel of whole
   messages on it, with the framing the caller chooses (this crate picks none); `Connector` and `Listener` implement the
   crate's connector and listener traits.
-- **A socket shared with a group** (Unix): `socket_group` or `socket_group_name` with `socket_mode(0o660)`, applied
+- **A socket shared with a group** (Unix): `socket_group` with `socket_mode(0o660)`, applied
   before the socket can be connected to; a group the process cannot set is refused.
 - **Nothing dropped silently**: a setting this platform cannot honour is refused when it would be stricter than the
   default, and listed by `not_applied()` when it is meaningless here.
@@ -86,8 +86,14 @@ use coqui_transport_pipe::{Listener, PipeName, Stream};
 # let name = PipeName::named_in(directory.path(), &name)?;
 let (ours, theirs) = (Identity::generate()?, Identity::generate()?);
 let (our_id, their_id) = (ours.peer_id(), theirs.peer_id());
-let dialling = Noise::builder(ours).responders(Trust::pinned([their_id])).build();
-let answering = Noise::builder(theirs).initiators(Trust::pinned([our_id])).build();
+let dialling = Noise::builder()
+    .identity(ours)
+    .responders(Trust::pinned([their_id]))
+    .build()?;
+let answering = Noise::builder()
+    .identity(theirs)
+    .initiators(Trust::pinned([our_id]))
+    .build()?;
 
 let listener = Listener::bind(&name)?;
 let mut client = Stream::connect(&name)?;
@@ -110,7 +116,9 @@ use coqui_transport_pipe::{Listener, PipeName};
 
 let directory = tempfile::tempdir()?;
 let name = PipeName::named_in(directory.path(), "readme-builder")?;
-let builder = Listener::builder(&name).read_timeout(Duration::MAX);
+let builder = Listener::builder()
+    .name(&name)
+    .read_timeout(None::<Duration>);
 assert_eq!(builder.non_defaults()[0].setting, "read_timeout");
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
@@ -119,7 +127,7 @@ assert_eq!(builder.non_defaults()[0].setting, "read_timeout");
 
 | Module | Purpose |
 | --- | --- |
-| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerBuilder`, `ListenerSettings`, `Stream`, `ConnectBuilder`, `ConnectSettings`, `Connector`, `OsIdentity`, `Error`, `ReadHalf` and `WriteHalf` (`channel`), and `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault`. |
+| `coqui_transport_pipe` | `PipeName`, `Listener`, `ListenerBuilder`, `ListenerSettings`, `Stream`, `ConnectBuilder`, `ConnectSettings`, `SocketMode`, `SocketGroup`, `Connector`, `OsIdentity`, `Error`, `BuildError`, `Missing`, `ReadHalf` and `WriteHalf` (`channel`), `coqui-builder`'s `NonDefault`, and `coqui-peer`'s `ReadTimeout` and `WriteTimeout`. |
 | `coqui_transport_pipe::asynch` | The listener, the stream and `Connector` over tokio (`tokio`). |
 
 ## Limits

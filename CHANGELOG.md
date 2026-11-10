@@ -9,14 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- **Builders and settings.** `Listener::builder(name)` and `Stream::builder(name)` set a bind or a connection up by the
+- **Builders and settings.** `Listener::builder()` and `Stream::builder()` set a bind or a connection up by the
   setting's name (`remote_clients`, `security_descriptor`, `first_instance`, `max_instances`, `buffer_size`, `socket_mode`,
-  `socket_group`, `socket_group_name`, `shared_directory`, `remove_stale`, `backlog`, `timeout`, `impersonation`,
-  `read_timeout`, `write_timeout`, `settings`), then `build()`, or `build_async()` for the tokio forms; `Listener::bind` and
-  `Stream::connect` stay as the defaults. `ListenerSettings` and `ConnectSettings` are guatiao values a file fills, and
-  `settings(..)` takes one whole. A timeout is a `Duration`, and `Duration::MAX` waits forever. `non_defaults()` lists
-  every setting that differs from its default and means something on this platform, named by key; `not_applied()` the
-  ones meaningless here. `Connector::settings` replaces `with_options`.
+  `socket_group`, `shared_directory`, `remove_stale`, `backlog`, `timeout`, `impersonation`, `read_timeout`,
+  `write_timeout`), with the pipe name as the required `name` input, then `build()`, or `build_async()` for the tokio
+  forms; `Listener::bind` and `Stream::connect` stay as the defaults. `ListenerSettings` and `ConnectSettings` are
+  `coqui-builder` settings a file fills (`Partial<ListenerSettings>`), and `fill(..)` lays one over a builder. A read or
+  write timeout is an `Option<Duration>`: `None`, written `never`, waits forever. `non_defaults()` lists every setting
+  that differs from its default and means something on this platform, named by key; `not_applied()` the ones
+  meaningless here. `Connector::settings` replaces `with_options`.
+- `SocketMode`, the permission bits of a socket, written `0o660`, and `SocketGroup`, an id or a name; `ListenerParts`
+  and `ConnectParts`, what the builders collect, with `parts()` on each builder; `BuildError` and `Missing`, what
+  `build` fails with; the `prelude` module with the settings setters traits.
 - `PipeName`: a validated Windows pipe name or Unix socket path, written `pipe:NAME` or `unix:PATH`.
 - `Listener` and `Stream`: blocking listen, accept and connect, one API over named pipes and Unix
   domain sockets. A stream implements `Read`, `Write`, `coqui_peer::ReadTimeout` and `WriteTimeout`, so
@@ -48,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **The settings, the builders and the report are `coqui-builder`'s.** `ListenerSettings` and `ConnectSettings` derive
+  `Describe` where they derived guatiao's `ToValue`, `FromValue` and `Schema`, so the crate no longer depends on
+  guatiao. A text form changes: a duration is a number with an optional unit (`30`, `250ms`), not `[secs, nanos]` or
+  `{secs, nanos}`; `read_timeout` and `write_timeout` are `Option<Duration>` and `never` (`None`) replaces
+  `Duration::MAX`; `socket_mode` is `0o660`, not the number 432; `socket_group` is a `SocketGroup`. `build` and
+  `build_async` fail with `BuildError<Error>`: `Missing` when the name was not given, `Failed(Error)` as before.
+  `NonDefault` is `coqui-builder`'s, and its `value` and `default` are typed texts such as `Duration(30s)`,
+  `SocketMode(0o600)` and `bool(true)`. A builder's setters take `impl Into` of the setting's type, so a security
+  descriptor is given as a `String` and a timeout as a `Duration` or `None::<Duration>`. A builder's `non_defaults()`
+  lists every difference, including the ones `not_applied()` names; the settings' and the listener's lists keep to
+  what means something on this platform.
+
 - The crate is `coqui-transport-pipe` (it was `coqui-peer-pipe`), in the `coqui-transport` family: the repository is
   `Boriken-Dev/coqui-transport-pipe`, the library `coqui_transport_pipe`.
 - The `channel` feature is no longer a module: it makes `Stream` a `coqui_transport::Split` (with `ReadHalf` and
@@ -71,6 +87,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- `Listener::builder(&name)` and `Stream::builder(&name)` taking the name: it is `builder().name(&name)`.
+- `ListenerBuilder::settings` and `ConnectBuilder::settings`: `fill(Partial::from(settings))` replaces them.
+- `ListenerBuilder::socket_group(u32)` and `socket_group_name(..)`: `socket_group(SocketGroup::Id(gid))` and
+  `socket_group(SocketGroup::Name(..))`.
+- `Clone` on `ListenerBuilder` and `ConnectBuilder`.
+- `Duration::MAX` as the setting for no timeout, and the guatiao value form of the settings (`from_value`, `to_value`,
+  `schema`).
+- `coqui-peer`'s `NonDefault` as this crate's re-export, and `ListenerSettings::socket_mode` as a `u32`.
 - The `channel` module: `Channel`, `ChannelOptions`, `DEFAULT_QUEUED_BYTES` and `DEFAULT_SEND_LIMIT`. Use
   `coqui_transport::StreamChannel` (its builder has the same options and more); `Channel::peer` is `Stream::peer`,
   asked before the stream is given to the channel. The channel read inside `receive`; `StreamChannel` reads ahead on a

@@ -10,16 +10,21 @@ package and is self-contained. Development documentation lives with the source a
 | `tokio` | `tokio` (`net`, `io-util`, `time`), `coqui-peer/tokio`, `coqui-transport/tokio` | module `asynch` | off |
 | `channel` | nothing | `Stream: coqui_transport::Split`, with `ReadHalf` and `WriteHalf`, so `StreamChannel::start` runs on a stream | off |
 
-MSRV Rust 1.89. A default build depends on `coqui-peer` (by git revision, `e0f96b8`), `coqui-transport` (by git
-revision, `c550956`, no features), `guatiao` (by revision), `tracing`, on Windows `windows-sys`, and on Unix `socket2` and `libc`. Version
-`0.0.0-alpha.0`, unreleased: depend on a git revision, and name the same `coqui-peer` and `coqui-transport`
+MSRV Rust 1.89. A default build depends on `coqui-builder` (by git revision, with its `derive` feature: the settings types,
+their builders and `NonDefault`), `coqui-peer` (by git revision, `984db3d`), `coqui-transport` (by git
+revision, `1283116`, no features), `tracing`, on Windows `windows-sys`, and on Unix `socket2` and `libc`. Version
+`0.0.0-alpha.0`, unreleased: depend on a git revision, and name the same `coqui-builder`, `coqui-peer` and `coqui-transport`
 revisions if you use them directly. This is a transport of `coqui-peer` and of `coqui-transport`, not a method: it
 proves no key, and a method runs over it.
 
-Imports: the crate root holds `PipeName`, `Listener`, `ListenerBuilder`, `ListenerSettings`, `Stream`, `ConnectBuilder`, `ConnectSettings`,
-`OsIdentity`, `current_user`, `Connector`, `Error`, `ReadHalf` and `WriteHalf` (feature `channel`), the
-`DEFAULT_` constants, and re-exports of `coqui-peer`'s `ReadTimeout`, `WriteTimeout` and `NonDefault` (the report
-every `non_defaults()` and `not_applied()` returns: `setting`, `value`, `default`). One public module: `asynch` (feature `tokio`).
+Imports: the crate root holds `PipeName`, `Listener`, `ListenerBuilder`, `ListenerParts`, `ListenerSettings`, `Stream`,
+`ConnectBuilder`, `ConnectParts`, `ConnectSettings`, `SocketMode`, `SocketGroup`, `OsIdentity`, `current_user`, `Connector`,
+`Error`, `ReadHalf` and `WriteHalf` (feature `channel`), the `DEFAULT_` constants, and re-exports of `coqui-builder`'s
+`BuildError` (what `build` fails with), `Missing` and `NonDefault` (the report every `non_defaults()` and
+`not_applied()` returns: `setting`, `value`, `default`, each `Display` as `Type(text)`, such as `Duration(30s)`), and
+of `coqui-peer`'s `MessageTransport`, `ReadTimeout` and `WriteTimeout`. Two public modules: `asynch` (feature `tokio`) and
+`prelude`, the settings setters traits (`ListenerSettingsSetters`, `ConnectSettingsSetters`) for a builder written in another
+crate; the builders here have the setters as methods and need no import.
 
 `unsafe` only for the operating system's calls, in `src/sys/windows.rs` and `src/sys/unix_os.rs`; a test
 lists them. No process-wide state. A library prints nothing: a setting that differs from its default is
@@ -33,7 +38,7 @@ run.
 ## Names (`coqui_transport_pipe::PipeName`)
 
 ```rust
-pub struct PipeName;   // Clone, Debug, Eq, Hash, Display, FromStr, AsRef<Path>, Send, Sync
+pub struct PipeName;   // Clone, Debug, Eq, Hash, Display, FromStr, AsRef<Path>, From<&PipeName>, Send, Sync
 impl PipeName {
     pub fn named(name: &str) -> Result<PipeName, Error>;       // Windows \\.\pipe\NAME; Unix $XDG_RUNTIME_DIR/NAME.sock, else $TMPDIR/NAME.sock
     pub fn named_in(directory: impl AsRef<Path>, name: &str) -> Result<PipeName, Error>;   // Unix DIRECTORY/NAME.sock; Windows ignores directory
@@ -66,53 +71,63 @@ refused.
 pub struct Listener;   // Debug, Send, Sync
 impl Listener {
     pub fn bind(name: &PipeName) -> Result<Listener, Error>;
-    pub fn builder(name: &PipeName) -> ListenerBuilder;   // every setting at its default
+    pub fn builder() -> ListenerBuilder;   // nothing set: the name is required, every setting at its default
     pub fn accept(&self) -> Result<Stream, Error>;                                        // waits forever
     pub fn accept_timeout(&self, timeout: Option<Duration>) -> Result<Stream, Error>;     // Error::TimedOut; the listener goes on
     pub fn name(&self) -> &PipeName;
     pub fn non_defaults(&self) -> &[NonDefault];
     pub fn not_applied(&self) -> &[NonDefault];
 }
-pub struct ListenerBuilder;   // Clone, Debug, must_use; every setter takes and returns self, the last wins
+// Derived by coqui_builder::Builder from ListenerParts { settings: ListenerSettings, input name: PipeName }.
+// Debug, must_use, not Clone; the last write of a key wins, whichever way it was written.
+pub struct ListenerBuilder;
 impl ListenerBuilder {
+    pub fn name(self, impl Into<PipeName>);             // required input; a &PipeName converts
     pub fn remote_clients(self, bool);                  // Windows; default false: PIPE_REJECT_REMOTE_CLIENTS
-    pub fn security_descriptor(self, sddl: impl Into<String>);   // Windows; default: this user alone
+    pub fn security_descriptor(self, impl Into<Option<String>>);   // Windows; default: this user alone
     pub fn first_instance(self, bool);                  // Windows; default true: FILE_FLAG_FIRST_PIPE_INSTANCE
     pub fn max_instances(self, u32);                    // Windows; 2..=254, 255 (default) is the system's own limit
     pub fn buffer_size(self, u32);                      // Windows; each direction, default DEFAULT_BUFFER_SIZE
-    pub fn socket_mode(self, u32);                      // Unix; default 0o600, any of 0..=0o7777
-    pub fn socket_group(self, gid: u32);                // Unix; default the process's own
-    pub fn socket_group_name(self, name: impl Into<String>);   // Unix; resolved at bind
+    pub fn socket_mode(self, impl Into<SocketMode>);    // Unix; default 0o600, any of 0..=0o7777 (a u32 converts)
+    pub fn socket_group(self, impl Into<Option<SocketGroup>>);   // Unix; default the process's own; an id or a name looked up at bind
     pub fn shared_directory(self, bool);                // Unix; default false
     pub fn remove_stale(self, bool);                    // Unix; default true
     pub fn backlog(self, i32);                          // Unix; above 0, default DEFAULT_BACKLOG
-    pub fn read_timeout(self, Duration);                // accepted streams; default DEFAULT_IO_TIMEOUT; Duration::MAX waits forever
-    pub fn write_timeout(self, Duration);               // the same
-    pub fn settings(self, ListenerSettings);            // every setting, whole
-    pub fn non_defaults(&self) -> Vec<NonDefault>;      // differs from the default and means something on this platform, by key
+    pub fn read_timeout(self, impl Into<Option<Duration>>);    // accepted streams; default Some(DEFAULT_IO_TIMEOUT); None waits forever
+    pub fn write_timeout(self, impl Into<Option<Duration>>);   // the same
+    pub fn fill(self, Partial<ListenerSettings>);       // only the keys the partial sets
+    pub fn fill_from(self, &mut impl Source) -> Result<Self, FillError>;
+    pub fn non_defaults(&self) -> Vec<NonDefault>;      // every key that differs from the default, including the ones not_applied() lists
     pub fn not_applied(&self) -> Vec<NonDefault>;       // changed from the default and meaningless on this platform
-    pub fn build(self) -> Result<Listener, Error>;      // Error::InvalidOptions for what means nothing
-    pub fn build_async(self) -> Result<asynch::Listener, Error>;   // feature tokio
+    pub fn parts(self) -> Result<ListenerParts, Missing>;
+    pub fn build(self) -> Result<Listener, BuildError<Error>>;   // Missing names `name`; Failed(Error::InvalidOptions) for what means nothing
+    pub fn build_async(self) -> Result<asynch::Listener, BuildError<Error>>;   // feature tokio; over parts()
 }
-// A guatiao value (ToValue, FromValue, Schema): every key optional, unknown keys refused, a duration is seconds,
-// [secs, nanos] or {secs, nanos}. security_descriptor and socket_group are absent or text (digits alone are a gid);
-// socket_mode is a number (0o600 is 384).
+pub struct ListenerParts;   // Debug; the settings and the name, what build converts
+// Describe: every key optional, unknown keys refused, a duration is a number with an optional unit (`30`, `250ms`), a timeout
+// reads `never` as None. Read from text with `Partial<ListenerSettings>` (feature `serde` of coqui-builder), then `build()`.
+// socket_mode is written `0o660` (the `0o` prefix is required, octal); socket_group is absent or text, digits alone an id.
 #[non_exhaustive] pub struct ListenerSettings { pub remote_clients: bool, pub security_descriptor: Option<String>,
-    pub first_instance: bool, pub max_instances: u32, pub buffer_size: u32, pub socket_mode: u32,
-    pub socket_group: Option<String>, pub shared_directory: bool, pub remove_stale: bool, pub backlog: i32,
-    pub read_timeout: Duration, pub write_timeout: Duration }   // Default: false, none, true, 255, DEFAULT_BUFFER_SIZE, 0o600, none, false, true, DEFAULT_BACKLOG, 30 s, 30 s
+    pub first_instance: bool, pub max_instances: u32, pub buffer_size: u32, pub socket_mode: SocketMode,
+    pub socket_group: Option<SocketGroup>, pub shared_directory: bool, pub remove_stale: bool, pub backlog: i32,
+    pub read_timeout: Option<Duration>, pub write_timeout: Option<Duration> }   // Default: false, none, true, 255, DEFAULT_BUFFER_SIZE, 0o600, none, false, true, DEFAULT_BACKLOG, Some(30 s), Some(30 s)
 impl ListenerSettings { pub const fn new() -> Self; pub fn non_defaults(&self) -> Vec<NonDefault>; pub fn not_applied(&self) -> Vec<NonDefault>; }
+pub struct SocketMode;   // Copy, Eq, Hash, Display as `0o660`, FromStr (needs the `0o` prefix), From<u32>
+impl SocketMode { pub const fn new(bits: u32) -> Self; pub const fn get(self) -> u32; }
+pub enum SocketGroup { Id(u32), Name(String) }   // Display as the id's digits or the name; FromStr: digits alone are an id, an empty text is Error::InvalidOptions
+// A Name of digits that fit an id, an empty one, or one holding a NUL is Error::InvalidOptions at bind.
 pub const DEFAULT_IO_TIMEOUT: Duration;      // 30 s
 pub const DEFAULT_CONNECT_TIMEOUT: Duration; // 5 s
 pub const DEFAULT_BUFFER_SIZE: u32;          // 64 KiB
 pub const DEFAULT_BACKLOG: i32;              // 128
-pub const DEFAULT_SOCKET_MODE: u32;          // 0o600
+pub const DEFAULT_SOCKET_MODE: SocketMode;   // 0o600
 ```
 
 **Reporting, not judging.** Whether a looser setting was meant is the caller's to say: the crate never warns. Every
 setting that differs from its default is returned by `non_defaults()` (on the builders, the settings, the listener) and logged at
-`debug`. A setting changed from its default that this platform cannot honour is never dropped silently: one that would
-be stricter than the default is `Error::InvalidOptions` at `build` (Windows: `socket_group`, `remove_stale(false)`; Unix:
+`debug`. The settings' and the listener's `non_defaults()` list only what means something on this platform (a socket group
+only when it is not the process's own); a builder's lists every difference. A setting changed from its default that this platform cannot honour is never dropped silently: one that would
+be stricter than the default is `BuildError::Failed(Error::InvalidOptions)` at `build` (Windows: `socket_group`, `remove_stale(false)`; Unix:
 `security_descriptor`, `max_instances` below 255), one that is meaningless here is returned by `not_applied()` (Windows:
 `socket_mode`, `shared_directory`, `backlog`; Unix: `buffer_size`, `remote_clients`, `first_instance(false)`,
 and `impersonation(true)` on `ConnectBuilder`) and logged at `debug`.
@@ -143,7 +158,7 @@ name is never free while the listener lives. Callers of `accept` on one listener
 4. binds in a private directory beside it, sets the group (`socket_group`) and the mode, then links it to the path, so the
    socket is never seen with another group or mode, and removes the directory.
 
-`socket_group` (or `socket_group_name`, looked up at bind) is for a socket shared with a group, as `/run/canoa/<user>.sock`
+`socket_group` (an id, or a name looked up at bind) is for a socket shared with a group, as `/run/canoa/<user>.sock`
 owned by the user and the group `canoa` with `socket_mode(0o660)`: a member connects, anyone else is refused by the mode. The
 process must be root or a member of the group: otherwise `Error::GroupDenied`, refused before the lock or the path is
 touched; a name no group has is `Error::UnknownGroup`. A group other than the process's own is in `non_defaults()`. On
@@ -157,33 +172,38 @@ Dropping the listener removes the path if it is still this socket.
 pub struct Stream;     // Debug, Send, Sync
 impl Stream {
     pub fn connect(name: &PipeName) -> Result<Stream, Error>;
-    pub fn builder(name: &PipeName) -> ConnectBuilder;   // every setting at its default
+    pub fn builder() -> ConnectBuilder;   // nothing set: the name is required, every setting at its default
     pub fn peer(&self) -> io::Result<OsIdentity>;
     pub fn shutdown(&self) -> io::Result<()>;
 }
 impl Read + Write + ReadTimeout + WriteTimeout for Stream;
 impl Read + Write + ReadTimeout + WriteTimeout for &Stream;
-pub struct ConnectBuilder;   // Clone, Debug, must_use
+// Derived from ConnectParts { settings: ConnectSettings, input name: PipeName }; Debug, must_use, not Clone.
+pub struct ConnectBuilder;
 impl ConnectBuilder {
+    pub fn name(self, impl Into<PipeName>);         // required input
     pub fn timeout(self, Duration);                 // default DEFAULT_CONNECT_TIMEOUT: for a free instance or a place in the queue
     pub fn impersonation(self, bool);               // Windows; default false: SECURITY_IDENTIFICATION
-    pub fn read_timeout(self, Duration);            // default DEFAULT_IO_TIMEOUT; Duration::MAX waits forever
-    pub fn write_timeout(self, Duration);           // the same
-    pub fn settings(self, ConnectSettings);         // every setting, whole
+    pub fn read_timeout(self, impl Into<Option<Duration>>);    // default Some(DEFAULT_IO_TIMEOUT); None waits forever
+    pub fn write_timeout(self, impl Into<Option<Duration>>);   // the same
+    pub fn fill(self, Partial<ConnectSettings>);    // only the keys the partial sets
+    pub fn fill_from(self, &mut impl Source) -> Result<Self, FillError>;
     pub fn non_defaults(&self) -> Vec<NonDefault>;
     pub fn not_applied(&self) -> Vec<NonDefault>;    // Unix: impersonation(true), which does nothing there
-    pub fn build(self) -> Result<Stream, Error>;
-    pub async fn build_async(self) -> Result<asynch::Stream, Error>;   // feature tokio
+    pub fn parts(self) -> Result<ConnectParts, Missing>;
+    pub fn build(self) -> Result<Stream, BuildError<Error>>;
+    pub async fn build_async(self) -> Result<asynch::Stream, BuildError<Error>>;   // feature tokio; over parts()
 }
+pub struct ConnectParts;   // Debug
 #[non_exhaustive] pub struct ConnectSettings { pub timeout: Duration, pub impersonation: bool,
-    pub read_timeout: Duration, pub write_timeout: Duration }   // guatiao value as above; Default: 5 s, false, 30 s, 30 s
+    pub read_timeout: Option<Duration>, pub write_timeout: Option<Duration> }   // Describe as above; Default: 5 s, false, Some(30 s), Some(30 s)
 impl ConnectSettings { pub const fn new() -> Self; pub fn non_defaults(&self) -> Vec<NonDefault>; pub fn not_applied(&self) -> Vec<NonDefault>; }
 ```
 
 `connect` errors: `NotListening` (at once), `AccessDenied` (this user or, through file sharing, this client),
 `TimedOut`, `Io`. Nothing proves who listens: run a key proof over the stream.
 
-Every duration in this crate, options and calls alike, that is too long for the clock (`Duration::MAX`) waits as
+Every duration in this crate, settings and calls alike, that is too long for the clock (`Duration::MAX`) waits as
 `None` would. On Unix a write to a peer that left is `BrokenPipe` and never raises SIGPIPE, whatever the
 process's disposition (`MSG_NOSIGNAL`, `SO_NOSIGPIPE` on Apple's systems).
 
