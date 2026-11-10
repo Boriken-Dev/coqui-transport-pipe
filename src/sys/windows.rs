@@ -222,7 +222,12 @@ impl Stream {
         let deadline = deadline::after(options.timeout);
         loop {
             if let Some(handle) = open(&path, options.impersonation)? {
-                return Ok(Self::new(handle, false, options.read(), options.write())?);
+                return Ok(Self::new(
+                    handle,
+                    false,
+                    options.read_timeout,
+                    options.write_timeout,
+                )?);
             }
             if deadline::passed(deadline) {
                 return Err(Error::TimedOut);
@@ -582,8 +587,8 @@ impl Listener {
         Ok(Self {
             instances,
             waiting: Mutex::new(Waiting { pending, spare }),
-            read_timeout: options.read(),
-            write_timeout: options.write(),
+            read_timeout: options.read_timeout,
+            write_timeout: options.write_timeout,
         })
     }
 

@@ -11,7 +11,7 @@ use core::task::{Context, Poll};
 use std::io;
 use std::time::Instant;
 
-use coqui_peer::NonDefault;
+use coqui_builder::NonDefault;
 use coqui_transport::asynch::{AsyncConnector, BoxFuture};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
@@ -53,7 +53,7 @@ pub struct Listener {
 }
 
 impl Listener {
-    /// Binds `name` with every setting at its default: `crate::Listener::builder(name).build_async()`.
+    /// Binds `name` with every setting at its default: `crate::Listener::builder().name(name).build_async()`.
     ///
     /// # Errors
     ///
@@ -180,7 +180,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    /// Connects to `name` with every setting at its default: `Stream::builder(name).build_async()`.
+    /// Connects to `name` with every setting at its default: `Stream::builder().name(name).build_async()`.
     ///
     /// # Errors
     ///

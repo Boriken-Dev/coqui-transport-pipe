@@ -8,7 +8,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use coqui_transport::frame::LengthPrefix;
-use coqui_transport::{Channel, Failure, StreamChannel};
+use coqui_transport::{Channel, Failure, StreamChannel, StreamChannelBuilder};
 use coqui_transport_pipe::{Connector, Listener, Stream};
 use support::place;
 
@@ -87,9 +87,11 @@ fn closing_sends_what_is_queued_and_the_peer_reads_the_end_in_order() {
 #[test]
 fn closing_with_what_the_peer_sent_unread_does_not_lose_what_was_sent_last() {
     let (_place, _listener, client, server) = streams("linger");
-    let client = StreamChannel::builder(LengthPrefix::u32_be())
+    let client = StreamChannelBuilder::new()
+        .codec(LengthPrefix::u32_be())
         .pending(1)
-        .start(client)
+        .stream(client)
+        .build()
         .unwrap();
     let server = StreamChannel::start(server, LengthPrefix::u32_be()).unwrap();
     for _ in 0..20 {
@@ -105,9 +107,11 @@ fn closing_with_what_the_peer_sent_unread_does_not_lose_what_was_sent_last() {
 #[test]
 fn closing_ends_the_write_direction_at_once() {
     let (_place, _listener, client, server) = streams("half-close");
-    let client = StreamChannel::builder(LengthPrefix::u32_be())
+    let client = StreamChannelBuilder::new()
+        .codec(LengthPrefix::u32_be())
         .linger(Duration::from_secs(3))
-        .start(client)
+        .stream(client)
+        .build()
         .unwrap();
     let server = StreamChannel::start(server, LengthPrefix::u32_be()).unwrap();
     let answering = thread::spawn(move || {
@@ -160,9 +164,11 @@ fn a_peer_that_left_inside_a_frame_is_a_lost_path() {
 fn a_message_above_the_receive_bound_ends_the_channel_at_both_ends() {
     let (_place, _listener, client, server) = streams("bound");
     let client = StreamChannel::start(client, LengthPrefix::u32_be()).unwrap();
-    let server = StreamChannel::builder(LengthPrefix::u32_be())
+    let server = StreamChannelBuilder::new()
+        .codec(LengthPrefix::u32_be())
         .max_message(8)
-        .start(server)
+        .stream(server)
+        .build()
         .unwrap();
     client.send(&[7; 64]).unwrap();
     assert_eq!(server.receive(WAIT), Err(Failure::Protocol));
@@ -175,13 +181,16 @@ fn a_message_above_the_receive_bound_ends_the_channel_at_both_ends() {
 #[test]
 fn a_peer_that_takes_nothing_for_the_send_limit_ends_the_channel() {
     let place = place("stall");
-    let listener = Listener::builder(&place.name)
+    let listener = Listener::builder()
+        .name(&place.name)
         .buffer_size(4096)
         .build()
         .unwrap();
-    let client = StreamChannel::builder(LengthPrefix::u32_be())
+    let client = StreamChannelBuilder::new()
+        .codec(LengthPrefix::u32_be())
         .send_limit(Duration::from_millis(200))
-        .start(Stream::connect(&place.name).unwrap())
+        .stream(Stream::connect(&place.name).unwrap())
+        .build()
         .unwrap();
     let _server = listener.accept().unwrap();
     let started = Instant::now();
@@ -230,7 +239,11 @@ fn the_connector_gives_its_timeout_to_the_connect() {
 
     // Nothing accepts, so the queue fills (on Windows, the instances) and a connect waits for room.
     let place = place("full");
-    let _listener = Listener::builder(&place.name).backlog(1).build().unwrap();
+    let _listener = Listener::builder()
+        .name(&place.name)
+        .backlog(1)
+        .build()
+        .unwrap();
     let connector = Connector::new(place.name.clone());
     let mut held = Vec::new();
     for _ in 0..300 {

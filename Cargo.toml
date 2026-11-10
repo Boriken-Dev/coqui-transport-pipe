@@ -26,18 +26,18 @@ tokio = ["dep:tokio", "coqui-peer/tokio", "coqui-transport/tokio"]
 channel = []
 
 [dependencies]
-# The settings types' value form and schema; alpha, by revision, as the family pins it.
-guatiao = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b", default-features = false, features = ["derive"] }
-# ReadTimeout, WriteTimeout, MessageTransport and NonDefault, which make this a transport of the
+# The settings types, their builders and the non-default report. By revision, as the family pins it.
+coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", features = ["derive"] }
+# ReadTimeout, WriteTimeout and MessageTransport, which make this a transport of the
 # family. The family has no releases for now: its crates depend on each other by git revision.
-coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "381e2a8144a228e592dc7d82eeb7db85885422ec" }
+coqui-peer = { git = "https://github.com/Boriken-Dev/coqui-peer", rev = "984db3d54b73de10c7892b06fe269a259de2d1c5" }
 # A non-default setting at bind or connect is logged at debug; the binary chooses the subscriber.
 tracing = { version = "0.1", default-features = false, features = ["std"] }
 # Async streams, behind `tokio`.
 tokio = { version = "1", default-features = false, features = ["net", "io-util", "time"], optional = true }
 # The connector and listener traits, the codec `Messages` frames with, and `Split`, which `StreamChannel`
 # runs a stream through. The family has no releases for now: a git revision.
-coqui-transport = { git = "https://github.com/Boriken-Dev/coqui-transport", rev = "19183aa8fa40dff74132d46e18d1ff07fc1cbf38", default-features = false }
+coqui-transport = { git = "https://github.com/Boriken-Dev/coqui-transport", rev = "1283116a22de6a8918faa3d0ebd78b8b6777ff0a", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # Named pipes. Microsoft's bindings, which tokio already uses. `interprocess` was the candidate above
@@ -60,11 +60,13 @@ socket2 = { version = "0.6", default-features = false, features = ["all"] }
 libc = { version = "0.2", default-features = false }
 
 [dev-dependencies]
-# The settings types' text forms in tests, through guatiao-serde.
-guatiao-serde = { git = "https://github.com/Boriken-Dev/guatiao", rev = "0350bae7fef4cef2aa46ce73f1ef6be15983d83b", default-features = false, features = ["json", "toml"] }
+# Settings read from TOML and JSON text in tests.
+coqui-builder = { git = "https://github.com/Boriken-Dev/coqui-builder", rev = "c1875f8276bd6366c38e9133fdb1181a0ffbaaad", features = ["derive", "serde"] }
+toml = "1"
+serde_json = "1"
 # The two methods the handshake tests drive.
-coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "6fd5137ef13d908581f6d1c9b0ca6b1bc19e3df3" }
-coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "e5c1e6df27260ba3b4cec0a1ad5e37a04652e5f4", features = ["generate", "tokio"] }
+coqui-peer-noise = { git = "https://github.com/Boriken-Dev/coqui-peer-noise", rev = "3a5b30689780a6e6291af565ff6abbaae515973c" }
+coqui-peer-tls = { git = "https://github.com/Boriken-Dev/coqui-peer-tls", rev = "7cbd7ee208595c055d74eed79a4dafcd0175883d", features = ["generate", "tokio"] }
 # Arbitrary frames and chunkings.
 proptest = { version = "1", default-features = false, features = ["std"] }
 # Temporary socket directories.

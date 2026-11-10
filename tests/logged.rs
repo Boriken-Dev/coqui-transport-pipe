@@ -63,9 +63,10 @@ fn a_non_default_listener_is_reported_when_it_binds_and_not_warned_about() {
     let place = place("reported");
     let mut reported = Vec::new();
     let warnings = warned(|| {
-        let options = Listener::builder(&place.name)
-            .read_timeout(Duration::MAX)
-            .write_timeout(Duration::MAX);
+        let options = Listener::builder()
+            .name(&place.name)
+            .read_timeout(None::<Duration>)
+            .write_timeout(None::<Duration>);
         reported = options.non_defaults();
         let listener = options.build().unwrap();
         assert_eq!(listener.non_defaults().len(), 2);
@@ -73,8 +74,8 @@ fn a_non_default_listener_is_reported_when_it_binds_and_not_warned_about() {
     assert!(warnings.is_empty(), "{warnings:?}");
     let settings: Vec<_> = reported.iter().map(|w| w.setting.to_string()).collect();
     assert_eq!(settings, ["read_timeout", "write_timeout"]);
-    assert_eq!(reported[0].value, "[18446744073709551615,999999999]");
-    assert_eq!(reported[0].default, "[30,0]");
+    assert_eq!(reported[0].value.to_string(), "Duration(never)");
+    assert_eq!(reported[0].default.to_string(), "Duration(30s)");
 }
 
 #[test]
@@ -83,7 +84,9 @@ fn a_non_default_connection_is_reported_and_not_warned_about() {
     let _listener = Listener::bind(&place.name).unwrap();
     let mut reported = Vec::new();
     let warnings = warned(|| {
-        let options = Stream::builder(&place.name).read_timeout(Duration::from_secs(31));
+        let options = Stream::builder()
+            .name(&place.name)
+            .read_timeout(Duration::from_secs(31));
         reported = options.non_defaults();
         drop(options.build().unwrap());
     });
@@ -99,7 +102,12 @@ fn the_defaults_report_nothing() {
         let listener = Listener::bind(&place.name).unwrap();
         assert!(listener.non_defaults().is_empty());
         let _client = Stream::connect(&place.name).unwrap();
-        assert!(Stream::builder(&place.name).non_defaults().is_empty());
+        assert!(
+            Stream::builder()
+                .name(&place.name)
+                .non_defaults()
+                .is_empty()
+        );
         drop(listener);
     });
     assert!(warnings.is_empty(), "{warnings:?}");
@@ -111,7 +119,7 @@ fn allowing_remote_clients_is_reported_and_not_warned_about() {
     let place = place("reported-remote");
     let mut reported = Vec::new();
     let warnings = warned(|| {
-        let options = Listener::builder(&place.name).remote_clients(true);
+        let options = Listener::builder().name(&place.name).remote_clients(true);
         reported = options.non_defaults();
         drop(options.build().unwrap());
     });
@@ -123,14 +131,22 @@ fn allowing_remote_clients_is_reported_and_not_warned_about() {
 #[cfg(windows)]
 #[test]
 fn a_socket_group_means_nothing_on_windows() {
+    use coqui_transport_pipe::SocketGroup;
+
     let place = place("group-windows");
     for options in [
-        Listener::builder(&place.name).socket_group(1),
-        Listener::builder(&place.name).socket_group_name("users"),
+        Listener::builder()
+            .name(&place.name)
+            .socket_group(SocketGroup::Id(1)),
+        Listener::builder()
+            .name(&place.name)
+            .socket_group(SocketGroup::Name("users".to_owned())),
     ] {
         assert!(matches!(
             options.build(),
-            Err(coqui_transport_pipe::Error::InvalidOptions)
+            Err(coqui_transport_pipe::BuildError::Failed(
+                coqui_transport_pipe::Error::InvalidOptions
+            ))
         ));
     }
 }
@@ -144,12 +160,20 @@ fn a_unix_setting_is_refused_when_stricter_and_reported_when_meaningless() {
 
     let place = place("not-applied");
     assert!(matches!(
-        Listener::builder(&place.name).remove_stale(false).build(),
-        Err(Error::InvalidOptions)
+        Listener::builder()
+            .name(&place.name)
+            .remove_stale(false)
+            .build(),
+        Err(coqui_transport_pipe::BuildError::Failed(
+            Error::InvalidOptions
+        ))
     ));
     let mut reported = Vec::new();
     let warnings = warned(|| {
-        let options = Listener::builder(&place.name).socket_mode(0o660).backlog(8);
+        let options = Listener::builder()
+            .name(&place.name)
+            .socket_mode(0o660)
+            .backlog(8);
         reported = options.not_applied();
         let listener = options.build().unwrap();
         assert_eq!(listener.not_applied().len(), 2);
@@ -158,10 +182,10 @@ fn a_unix_setting_is_refused_when_stricter_and_reported_when_meaningless() {
     assert!(warnings.is_empty(), "{warnings:?}");
     let settings: Vec<_> = reported.iter().map(|w| w.setting.to_string()).collect();
     assert_eq!(settings, ["backlog", "socket_mode"]);
-    assert_eq!(reported[0].value, "8");
-    assert_eq!(reported[0].default, "128");
-    assert_eq!(reported[1].value, "432");
-    assert_eq!(reported[1].default, "384");
+    assert_eq!(reported[0].value.to_string(), "i32(8)");
+    assert_eq!(reported[0].default.to_string(), "i32(128)");
+    assert_eq!(reported[1].value.to_string(), "SocketMode(0o660)");
+    assert_eq!(reported[1].default.to_string(), "SocketMode(0o600)");
 }
 
 #[cfg(unix)]
@@ -171,28 +195,36 @@ fn a_windows_setting_is_refused_when_stricter_and_reported_when_meaningless() {
 
     let place = place("not-applied");
     for options in [
-        Listener::builder(&place.name).security_descriptor("D:P(A;;GA;;;WD)"),
-        Listener::builder(&place.name).max_instances(2),
+        Listener::builder()
+            .name(&place.name)
+            .security_descriptor("D:P(A;;GA;;;WD)".to_owned()),
+        Listener::builder().name(&place.name).max_instances(2),
     ] {
-        assert!(matches!(options.build(), Err(Error::InvalidOptions)));
+        assert!(matches!(
+            options.build(),
+            Err(coqui_transport_pipe::BuildError::Failed(
+                Error::InvalidOptions
+            ))
+        ));
     }
     let mut reported = Vec::new();
     let warnings = warned(|| {
-        let options = Listener::builder(&place.name)
+        let options = Listener::builder()
+            .name(&place.name)
             .buffer_size(4096)
             .remote_clients(true);
         reported = options.not_applied();
         let listener = options.build().unwrap();
         assert_eq!(listener.not_applied().len(), 2);
         assert!(listener.non_defaults().is_empty());
-        let connect = Stream::builder(&place.name).impersonation(true);
+        let connect = Stream::builder().name(&place.name).impersonation(true);
         assert_eq!(connect.not_applied().len(), 1);
         drop(connect.build().unwrap());
     });
     assert!(warnings.is_empty(), "{warnings:?}");
     let settings: Vec<_> = reported.iter().map(|w| w.setting.to_string()).collect();
     assert_eq!(settings, ["buffer_size", "remote_clients"]);
-    assert_eq!(reported[0].value, "4096");
+    assert_eq!(reported[0].value.to_string(), "u32(4096)");
 }
 
 #[cfg(unix)]
@@ -204,7 +236,7 @@ fn any_socket_mode_is_accepted_and_reported_when_it_is_not_the_default() {
         let place = place("mode");
         let mut reported = Vec::new();
         let warnings = warned(|| {
-            let options = Listener::builder(&place.name).socket_mode(mode);
+            let options = Listener::builder().name(&place.name).socket_mode(mode);
             reported = options.non_defaults();
             let listener = options.build().unwrap();
             let on_disk = std::fs::metadata(place.name.path()).unwrap().mode() & 0o7777;
@@ -214,12 +246,16 @@ fn any_socket_mode_is_accepted_and_reported_when_it_is_not_the_default() {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(reported.len(), 1, "{mode:o}");
         assert_eq!(reported[0].setting, "socket_mode");
-        assert_eq!(reported[0].value, mode.to_string());
-        assert_eq!(reported[0].default, "384");
+        assert_eq!(
+            reported[0].value.to_string(),
+            format!("SocketMode(0o{mode:o})")
+        );
+        assert_eq!(reported[0].default.to_string(), "SocketMode(0o600)");
     }
     let place = place("mode-default");
     assert!(
-        Listener::builder(&place.name)
+        Listener::builder()
+            .name(&place.name)
             .socket_mode(0o600)
             .non_defaults()
             .is_empty()

@@ -22,7 +22,7 @@ use crate::deadline;
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::{ConnectSettings, Group, ListenerSettings};
+use crate::options::{ConnectSettings, ListenerSettings, SocketGroup};
 
 /// One write at most. Linux applies a socket's send timeout to each wait for buffer room, so one large
 /// write to a peer reading slowly outlasts it many times over (32 MiB, 300 ms: 3 s and more).
@@ -60,7 +60,11 @@ impl Stream {
         let deadline = deadline::after(options.timeout);
         loop {
             if let Some(socket) = try_connect(name.path(), deadline)? {
-                return Ok(Self::new(socket, options.read(), options.write())?);
+                return Ok(Self::new(
+                    socket,
+                    options.read_timeout,
+                    options.write_timeout,
+                )?);
             }
             if deadline::passed(deadline) {
                 return Err(Error::TimedOut);
@@ -351,7 +355,10 @@ fn bind_privately(
             }
         })?;
     }
-    fs::set_permissions(&temporary, Permissions::from_mode(options.socket_mode))?;
+    fs::set_permissions(
+        &temporary,
+        Permissions::from_mode(options.socket_mode.get()),
+    )?;
     socket.listen(options.backlog)?;
     fs::hard_link(&temporary, path).map_err(|error| match error.kind() {
         io::ErrorKind::AlreadyExists => Error::NameTaken,
@@ -361,20 +368,20 @@ fn bind_privately(
 }
 
 /// The id of the group in `group`, or why it cannot be one.
-fn resolve_group(group: &Group) -> Result<u32, Error> {
+fn resolve_group(group: &SocketGroup) -> Result<u32, Error> {
     match group {
-        Group::Id(id) => Ok(*id),
-        Group::Name(name) => group_id(name)?.ok_or(Error::UnknownGroup),
+        SocketGroup::Id(id) => Ok(*id),
+        SocketGroup::Name(name) => group_id(name)?.ok_or(Error::UnknownGroup),
     }
 }
 
 /// The group the socket is to have, refused before anything is touched when this process could not
 /// give it.
 fn settable_group(options: &ListenerSettings) -> Result<Option<u32>, Error> {
-    let Some(group) = options.group() else {
+    let Some(group) = options.socket_group.as_ref() else {
         return Ok(None);
     };
-    let id = resolve_group(&group)?;
+    let id = resolve_group(group)?;
     if may_use_group(id)? {
         Ok(Some(id))
     } else {
@@ -383,7 +390,7 @@ fn settable_group(options: &ListenerSettings) -> Result<Option<u32>, Error> {
 }
 
 /// Whether `group` is not the process's own: a name that cannot be looked up counts as one.
-pub(crate) fn group_differs(group: &Group) -> bool {
+pub(crate) fn group_differs(group: &SocketGroup) -> bool {
     resolve_group(group).map_or(true, |id| id != effective_group())
 }
 
@@ -435,8 +442,8 @@ impl Listener {
         let (socket, bound) = bind_socket(name, options)?;
         Ok(Self {
             socket,
-            read_timeout: options.read(),
-            write_timeout: options.write(),
+            read_timeout: options.read_timeout,
+            write_timeout: options.write_timeout,
             _bound: bound,
         })
     }

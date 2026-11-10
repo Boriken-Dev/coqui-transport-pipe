@@ -30,12 +30,16 @@ fn noises() -> (Noise, Noise, coqui_peer::PeerId, coqui_peer::PeerId) {
     );
     let (id_a, id_b) = (a.peer_id(), b.peer_id());
     (
-        Noise::builder(a)
+        Noise::builder()
+            .identity(a)
             .responders(NoiseTrust::pinned([id_b]))
-            .build(),
-        Noise::builder(b)
+            .build()
+            .unwrap(),
+        Noise::builder()
+            .identity(b)
             .initiators(NoiseTrust::pinned([id_a]))
-            .build(),
+            .build()
+            .unwrap(),
         id_a,
         id_b,
     )
@@ -48,14 +52,17 @@ fn tlses() -> (Tls, Tls, coqui_peer::PeerId, coqui_peer::PeerId) {
     );
     let pin = |identity: &TlsIdentity| TlsTrust::Pinned(Pins::fixed([identity.fingerprint()]));
     let client = Tls::new().client(Arc::new(
-        ClientBuilder::new(pin(&b))
+        ClientBuilder::new()
+            .server(pin(&b))
             .identity(&a)
             .build()
             .unwrap()
             .config,
     ));
     let server = Tls::new().server(Arc::new(
-        ServerBuilder::new(&b, ClientAuth::Required(pin(&a)))
+        ServerBuilder::new()
+            .identity(&b)
+            .client_auth(ClientAuth::Required(pin(&a)))
             .build()
             .unwrap()
             .config,
@@ -149,12 +156,16 @@ fn a_key_nobody_pinned_is_refused_over_a_pipe() {
         NoiseIdentity::generate().unwrap(),
         NoiseIdentity::generate().unwrap(),
     );
-    let initiator = Noise::builder(stranger)
+    let initiator = Noise::builder()
+        .identity(stranger)
         .responders(NoiseTrust::pinned([b.peer_id()]))
-        .build();
-    let responder = Noise::builder(b)
+        .build()
+        .unwrap();
+    let responder = Noise::builder()
+        .identity(b)
         .initiators(NoiseTrust::pinned([a.peer_id()]))
-        .build();
+        .build()
+        .unwrap();
     let (_place, _listener, mut client, mut server) = connected("stranger");
     let answering =
         thread::spawn(move || drive_stream(responder.respond(None).unwrap(), &mut server).is_err());

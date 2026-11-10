@@ -15,8 +15,10 @@ use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
-use coqui_transport_pipe::{Error, Listener, NonDefault, PipeName, Stream, current_user};
-use support::{place, private_directory, temp_base};
+use coqui_transport_pipe::{
+    BuildError, Error, Listener, PipeName, SocketGroup, Stream, current_user,
+};
+use support::{line, lines, place, private_directory, temp_base};
 
 fn mode(path: &Path) -> u32 {
     fs::symlink_metadata(path).unwrap().mode() & 0o7777
@@ -92,14 +94,19 @@ fn nothing_of_the_bind_is_left_but_the_socket_and_its_lock() {
 #[test]
 fn a_looser_mode_is_a_choice_and_is_listed_as_weaker() {
     let place = place("mode-loose");
-    let listener = Listener::builder(&place.name)
+    let listener = Listener::builder()
+        .name(&place.name)
         .socket_mode(0o660)
         .build()
         .unwrap();
     assert_eq!(mode(place.name.path()), 0o660);
     assert_eq!(
-        listener.non_defaults(),
-        [NonDefault::new("socket_mode", "432", "384")]
+        lines(listener.non_defaults()),
+        [line(
+            "socket_mode",
+            "SocketMode(0o660)",
+            "SocketMode(0o600)"
+        )]
     );
 }
 
@@ -120,10 +127,14 @@ fn a_stale_socket_stays_when_removing_it_is_turned_off() {
     let directory = private_directory();
     let path = directory.path().join("s.sock");
     drop(UnixListener::bind(&path).unwrap());
-    let result = Listener::builder(&PipeName::at(&path).unwrap())
+    let result = Listener::builder()
+        .name(PipeName::at(&path).unwrap())
         .remove_stale(false)
         .build();
-    assert!(matches!(result, Err(Error::NameTaken)), "{result:?}");
+    assert!(
+        matches!(result, Err(BuildError::Failed(Error::NameTaken))),
+        "{result:?}"
+    );
     assert!(path.exists());
 }
 
@@ -241,13 +252,14 @@ fn a_shared_directory_is_a_choice_and_is_listed_as_weaker() {
     let directory = private_directory();
     set_mode(directory.path(), 0o777);
     let name = name_in(directory.path(), "s.sock");
-    let listener = Listener::builder(&name)
+    let listener = Listener::builder()
+        .name(&name)
         .shared_directory(true)
         .build()
         .unwrap();
     assert_eq!(
-        listener.non_defaults(),
-        [NonDefault::new("shared_directory", "true", "false")]
+        lines(listener.non_defaults()),
+        [line("shared_directory", "bool(true)", "bool(false)")]
     );
     round_trip(&listener, &name);
 }
@@ -330,10 +342,15 @@ fn nothing_blocks_a_listener_after_another_was_dropped() {
 #[test]
 fn a_full_queue_makes_a_client_wait_up_to_its_timeout() {
     let place = place("queue");
-    let _listener = Listener::builder(&place.name).backlog(1).build().unwrap();
+    let _listener = Listener::builder()
+        .name(&place.name)
+        .backlog(1)
+        .build()
+        .unwrap();
     let mut held = Vec::new();
     let error = loop {
-        match Stream::builder(&place.name)
+        match Stream::builder()
+            .name(&place.name)
             .timeout(Duration::from_millis(100))
             .build()
         {
@@ -344,9 +361,15 @@ fn a_full_queue_makes_a_client_wait_up_to_its_timeout() {
     };
     // FreeBSD 14.5 refuses a connect to a full queue where Linux makes it wait.
     if cfg!(target_os = "freebsd") {
-        assert!(matches!(error, Error::NotListening), "{error:?}");
+        assert!(
+            matches!(error, BuildError::Failed(Error::NotListening)),
+            "{error:?}"
+        );
     } else {
-        assert!(matches!(error, Error::TimedOut), "{error:?}");
+        assert!(
+            matches!(error, BuildError::Failed(Error::TimedOut)),
+            "{error:?}"
+        );
     }
 }
 
@@ -433,7 +456,11 @@ fn another_user_let_in_by_a_looser_mode_is_reported_by_the_kernel() {
     assert_eq!(current_user().unwrap(), "0", "run this one as root");
     let directory = searchable_directory();
     let name = name_in(directory.path(), "s.sock");
-    let listener = Listener::builder(&name).socket_mode(0o666).build().unwrap();
+    let listener = Listener::builder()
+        .name(&name)
+        .socket_mode(0o666)
+        .build()
+        .unwrap();
     let path = name.path().to_path_buf();
     let client = thread::spawn(move || connect_as_another_user(&path));
     let mut server = listener
@@ -459,7 +486,8 @@ fn a_directory_of_another_user_is_refused() {
     assert_eq!(unsafe { libc::chown(c_path.as_ptr(), 65534, 65534) }, 0);
     let result = Listener::bind(&name_in(directory.path(), "s.sock"));
     assert!(matches!(result, Err(Error::ForeignDirectory)), "{result:?}");
-    let allowed = Listener::builder(&name_in(directory.path(), "s.sock"))
+    let allowed = Listener::builder()
+        .name(name_in(directory.path(), "s.sock"))
         .shared_directory(true)
         .build();
     assert!(allowed.is_ok(), "{allowed:?}");
@@ -510,11 +538,15 @@ fn is_root() -> bool {
 fn a_group_that_does_not_exist_is_refused_before_anything_is_made() {
     let directory = private_directory();
     let name = name_in(directory.path(), "g.sock");
-    let error = Listener::builder(&name)
-        .socket_group_name("coqui-no-such-group")
+    let error = Listener::builder()
+        .name(&name)
+        .socket_group(SocketGroup::Name("coqui-no-such-group".to_owned()))
         .build()
         .unwrap_err();
-    assert!(matches!(error, Error::UnknownGroup), "{error:?}");
+    assert!(
+        matches!(error, BuildError::Failed(Error::UnknownGroup)),
+        "{error:?}"
+    );
     assert!(!name.path().exists());
 }
 
@@ -525,12 +557,16 @@ fn a_group_this_process_cannot_set_is_refused_before_anything_is_made() {
     }
     let directory = private_directory();
     let name = name_in(directory.path(), "g.sock");
-    let error = Listener::builder(&name)
+    let error = Listener::builder()
+        .name(&name)
         .socket_mode(0o660)
-        .socket_group(4_242_424)
+        .socket_group(SocketGroup::Id(4_242_424))
         .build()
         .unwrap_err();
-    assert!(matches!(error, Error::GroupDenied), "{error:?}");
+    assert!(
+        matches!(error, BuildError::Failed(Error::GroupDenied)),
+        "{error:?}"
+    );
     assert!(!name.path().exists());
     let mut lock = name.path().as_os_str().to_owned();
     lock.push(".lock");
@@ -544,15 +580,10 @@ fn a_group_this_process_cannot_set_is_refused_before_anything_is_made() {
 fn the_process_own_group_is_given_and_is_not_reported() {
     let directory = private_directory();
     let name = name_in(directory.path(), "g.sock");
-    let options = Listener::builder(&name)
+    let options = Listener::builder()
+        .name(&name)
         .socket_mode(0o660)
-        .socket_group(own_group());
-    assert!(
-        options
-            .non_defaults()
-            .iter()
-            .all(|w| w.setting != "socket_group")
-    );
+        .socket_group(SocketGroup::Id(own_group()));
     let listener = options.build().unwrap();
     assert_eq!(fs::metadata(name.path()).unwrap().gid(), own_group());
     assert_eq!(fs::metadata(name.path()).unwrap().mode() & 0o777, 0o660);
@@ -569,14 +600,19 @@ fn the_process_own_group_is_given_and_is_not_reported() {
 fn another_group_is_reported_with_what_it_is_and_what_the_default_is() {
     let directory = private_directory();
     let name = name_in(directory.path(), "g.sock");
-    let options = Listener::builder(&name).socket_group(own_group() + 1);
+    let options = Listener::builder()
+        .name(&name)
+        .socket_group(SocketGroup::Id(own_group() + 1));
     let non_defaults = options.non_defaults();
     let report = non_defaults
         .iter()
         .find(|w| w.setting == "socket_group")
         .unwrap();
-    assert_eq!(report.value, (own_group() + 1).to_string());
-    assert_eq!(report.default, "unset");
+    assert_eq!(
+        report.value.to_string(),
+        format!("SocketGroup({})", own_group() + 1)
+    );
+    assert_eq!(report.default.to_string(), "unset");
 }
 
 #[test]
@@ -587,9 +623,10 @@ fn a_member_of_the_sockets_group_connects_and_a_stranger_is_refused() {
     unsafe { libc::umask(0) };
     let directory = searchable_directory();
     let name = name_in(directory.path(), "g.sock");
-    let listener = Listener::builder(&name)
+    let listener = Listener::builder()
+        .name(&name)
         .socket_mode(0o660)
-        .socket_group(4242)
+        .socket_group(SocketGroup::Id(4242))
         .build()
         .unwrap();
     let metadata = fs::metadata(name.path()).unwrap();
@@ -646,9 +683,10 @@ fn the_socket_is_never_seen_before_its_group_is_set() {
                 seen
             })
         };
-        let listener = Listener::builder(&name)
+        let listener = Listener::builder()
+            .name(&name)
             .socket_mode(0o660)
-            .socket_group(4242)
+            .socket_group(SocketGroup::Id(4242))
             .build()
             .unwrap();
         thread::sleep(Duration::from_millis(2));

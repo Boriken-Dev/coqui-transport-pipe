@@ -54,3 +54,22 @@ pub fn temp_base() -> PathBuf {
         std::env::temp_dir()
     }
 }
+
+/// A report as (setting, value, default) texts, so an assertion reads in one line.
+pub fn lines(found: &[coqui_transport_pipe::NonDefault]) -> Vec<(String, String, String)> {
+    found
+        .iter()
+        .map(|line| {
+            (
+                line.setting.clone(),
+                line.value.to_string(),
+                line.default.to_string(),
+            )
+        })
+        .collect()
+}
+
+/// One expected line of such a report.
+pub fn line(setting: &str, value: &str, default: &str) -> (String, String, String) {
+    (setting.to_owned(), value.to_owned(), default.to_owned())
+}

@@ -33,12 +33,16 @@ fn noises() -> (Noise, Noise, coqui_peer::PeerId, coqui_peer::PeerId) {
     );
     let (id_a, id_b) = (a.peer_id(), b.peer_id());
     (
-        Noise::builder(a)
+        Noise::builder()
+            .identity(a)
             .responders(NoiseTrust::pinned([id_b]))
-            .build(),
-        Noise::builder(b)
+            .build()
+            .unwrap(),
+        Noise::builder()
+            .identity(b)
             .initiators(NoiseTrust::pinned([id_a]))
-            .build(),
+            .build()
+            .unwrap(),
         id_a,
         id_b,
     )
@@ -183,14 +187,17 @@ async fn tls_proves_both_certificates_over_a_stream() {
     );
     let pin = |identity: &TlsIdentity| TlsTrust::Pinned(Pins::fixed([identity.fingerprint()]));
     let client_method = Tls::new().client(Arc::new(
-        ClientBuilder::new(pin(&b))
+        ClientBuilder::new()
+            .server(pin(&b))
             .identity(&a)
             .build()
             .unwrap()
             .config,
     ));
     let server_method = Tls::new().server(Arc::new(
-        ServerBuilder::new(&b, ClientAuth::Required(pin(&a)))
+        ServerBuilder::new()
+            .identity(&b)
+            .client_auth(ClientAuth::Required(pin(&a)))
             .build()
             .unwrap()
             .config,
@@ -224,7 +231,8 @@ async fn a_deadline_is_met_on_a_silent_peer() {
 
 #[cfg(windows)]
 mod windows {
-    use coqui_transport_pipe::{NonDefault, PipeName};
+    use crate::support::{line, lines};
+    use coqui_transport_pipe::PipeName;
 
     use super::*;
 
@@ -242,11 +250,17 @@ mod windows {
     #[tokio::test]
     async fn a_descriptor_that_shuts_out_its_own_user_is_refused_at_bind() {
         let place = place("shut-out");
-        let result = coqui_transport_pipe::Listener::builder(&place.name)
-            .security_descriptor("D:P")
+        let result = coqui_transport_pipe::Listener::builder()
+            .name(&place.name)
+            .security_descriptor("D:P".to_owned())
             .build_async();
         assert!(
-            matches!(result, Err(Error::InvalidDescriptor)),
+            matches!(
+                result,
+                Err(coqui_transport_pipe::BuildError::Failed(
+                    Error::InvalidDescriptor
+                ))
+            ),
             "{result:?}"
         );
     }
@@ -254,13 +268,14 @@ mod windows {
     #[tokio::test]
     async fn non_default_settings_are_listed() {
         let place = place("non_defaults");
-        let listener = coqui_transport_pipe::Listener::builder(&place.name)
+        let listener = coqui_transport_pipe::Listener::builder()
+            .name(&place.name)
             .remote_clients(true)
             .build_async()
             .unwrap();
         assert_eq!(
-            listener.non_defaults(),
-            [NonDefault::new("remote_clients", "true", "false")]
+            lines(listener.non_defaults()),
+            [line("remote_clients", "bool(true)", "bool(false)")]
         );
     }
 }

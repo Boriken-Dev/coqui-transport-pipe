@@ -26,7 +26,9 @@ mod stream;
 mod sys;
 
 pub use connector::Connector;
-pub use coqui_peer::{MessageTransport, NonDefault, ReadTimeout, WriteTimeout};
+pub use coqui_builder::builder::BuildError;
+pub use coqui_builder::{Missing, NonDefault};
+pub use coqui_peer::{MessageTransport, ReadTimeout, WriteTimeout};
 pub use error::Error;
 #[cfg(feature = "channel")]
 #[cfg_attr(docsrs, doc(cfg(feature = "channel")))]
@@ -35,11 +37,18 @@ pub use identity::{OsIdentity, current_user};
 pub use listener::Listener;
 pub use name::PipeName;
 pub use options::{
-    ConnectBuilder, ConnectSettings, DEFAULT_BACKLOG, DEFAULT_BUFFER_SIZE, DEFAULT_CONNECT_TIMEOUT,
-    DEFAULT_IO_TIMEOUT, DEFAULT_SOCKET_MODE, ListenerBuilder, ListenerSettings,
+    ConnectBuilder, ConnectParts, ConnectSettings, DEFAULT_BACKLOG, DEFAULT_BUFFER_SIZE,
+    DEFAULT_CONNECT_TIMEOUT, DEFAULT_IO_TIMEOUT, DEFAULT_SOCKET_MODE, ListenerBuilder,
+    ListenerParts, ListenerSettings, SocketGroup, SocketMode,
 };
 pub use stream::Stream;
 
 #[cfg(feature = "tokio")]
 #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
 pub mod asynch;
+
+/// The settings setters, for a builder in another crate that holds one of these settings types. A
+/// builder of this crate has them as methods and needs none of this.
+pub mod prelude {
+    pub use crate::options::{ConnectSettingsSetters, ListenerSettingsSetters};
+}

@@ -29,7 +29,7 @@ pub enum Error {
     /// The security descriptor text does not parse, holds a NUL, or does not let this user add
     /// instances of its own pipe.
     InvalidDescriptor,
-    /// No group has the name given to `ListenerBuilder::socket_group_name`.
+    /// No group has the name given to `ListenerSettings::socket_group`.
     UnknownGroup,
     /// This process is neither root nor a member of the group given for the socket, so it cannot give it
     /// that group.

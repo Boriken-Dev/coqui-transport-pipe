@@ -224,6 +224,12 @@ impl FromStr for PipeName {
     }
 }
 
+impl From<&PipeName> for PipeName {
+    fn from(name: &PipeName) -> Self {
+        name.clone()
+    }
+}
+
 impl AsRef<Path> for PipeName {
     fn as_ref(&self) -> &Path {
         &self.path

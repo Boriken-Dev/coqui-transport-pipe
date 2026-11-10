@@ -1,11 +1,13 @@
 //! What a listener and a connection do by default, and what can be changed.
 #![forbid(unsafe_code)]
 
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec::Vec;
+use core::fmt;
+use core::str::FromStr;
 use core::time::Duration;
 
-use coqui_peer::NonDefault;
+use coqui_builder::{Builder, Configured, Describe, Leaf, NonDefault};
 
 use crate::error::Error;
 use crate::listener::Listener;
@@ -21,28 +23,83 @@ pub const DEFAULT_BUFFER_SIZE: u32 = 64 * 1024;
 /// The default queue of connections a socket holds for `accept` on Unix.
 pub const DEFAULT_BACKLOG: i32 = 128;
 /// The default mode of a socket on Unix: its owner only.
-pub const DEFAULT_SOCKET_MODE: u32 = 0o600;
+pub const DEFAULT_SOCKET_MODE: SocketMode = SocketMode::new(0o600);
 
 /// The most instances Windows lets a pipe have, which it treats as no limit of its own.
 pub(crate) const UNLIMITED_INSTANCES: u32 = 255;
 
-/// A group of a Unix socket: an id, or a name looked up when binding.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum Group {
-    Id(u32),
-    Name(String),
-}
+/// The permission bits of a Unix socket. Written in octal with a `0o` prefix (`0o660`).
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Leaf)]
+pub struct SocketMode(u32);
 
-impl Group {
-    /// The group a settings text names: digits alone are an id, anything else a name.
-    fn of(text: &str) -> Self {
-        text.parse()
-            .map_or_else(|_| Self::Name(text.to_owned()), Self::Id)
+impl SocketMode {
+    /// These permission bits. A value above `0o7777` is [`Error::InvalidOptions`] when a listener
+    /// binds.
+    #[must_use]
+    pub const fn new(bits: u32) -> Self {
+        Self(bits)
+    }
+
+    /// The permission bits.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
     }
 }
 
-impl core::fmt::Display for Group {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+impl From<u32> for SocketMode {
+    fn from(bits: u32) -> Self {
+        Self(bits)
+    }
+}
+
+impl fmt::Display for SocketMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "0o{:o}", self.0)
+    }
+}
+
+impl FromStr for SocketMode {
+    type Err = Error;
+
+    fn from_str(text: &str) -> Result<Self, Error> {
+        let digits = text.strip_prefix("0o").ok_or(Error::InvalidOptions)?;
+        if digits.starts_with('+') {
+            return Err(Error::InvalidOptions);
+        }
+        u32::from_str_radix(digits, 8)
+            .map(Self)
+            .map_err(|_| Error::InvalidOptions)
+    }
+}
+
+/// The group of a Unix socket: an id, or a name looked up when binding.
+///
+/// Written as the id's digits or as the name, so a name made only of digits that fit an id reads as
+/// that id: such a name is [`Error::InvalidOptions`] when a listener binds. An empty name, or one
+/// holding a NUL, is too.
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Leaf)]
+pub enum SocketGroup {
+    /// The group with this id.
+    Id(u32),
+    /// The group with this name, looked up when binding ([`Error::UnknownGroup`] when there is none).
+    Name(String),
+}
+
+impl SocketGroup {
+    /// Whether this names a group the text form can hold.
+    fn is_writable(&self) -> bool {
+        match self {
+            Self::Id(_) => true,
+            Self::Name(name) => {
+                !name.is_empty() && !name.contains('\0') && name.parse::<u32>().is_err()
+            }
+        }
+    }
+}
+
+impl fmt::Display for SocketGroup {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Id(id) => write!(f, "{id}"),
             Self::Name(name) => f.write_str(name),
@@ -50,21 +107,32 @@ impl core::fmt::Display for Group {
     }
 }
 
-/// The bound a timeout setting stands for: none for [`Duration::MAX`].
-pub(crate) fn bounded(timeout: Duration) -> Option<Duration> {
-    (timeout != Duration::MAX).then_some(timeout)
+impl FromStr for SocketGroup {
+    type Err = Error;
+
+    /// Digits alone are an id, anything else a name.
+    fn from_str(text: &str) -> Result<Self, Error> {
+        if text.is_empty() || text.contains('\0') {
+            return Err(Error::InvalidOptions);
+        }
+        Ok(text
+            .parse()
+            .map_or_else(|_| Self::Name(text.to_owned()), Self::Id))
+    }
 }
 
-/// What a [`ListenerBuilder`] takes whole through `settings`, in the form a file, a form or a peer
+/// What a [`ListenerBuilder`] takes whole through `fill`, in the form a file, a form or a peer
 /// fills.
 ///
 /// A setting for the other platform has no effect there and is listed by
 /// [`not_applied`](Self::not_applied). Every key is optional (an absent one is its default) and an
-/// unknown key is refused; a duration is a number of seconds, `[secs, nanos]` or `{secs, nanos}`. The
-/// type is a guatiao value (`from_value`, `to_value`, `schema`), and `guatiao_serde::text` reads and
-/// writes its text. It is `#[non_exhaustive]`: start from [`Default`] and assign the fields.
-#[derive(Clone, Debug, PartialEq, Eq, guatiao::ToValue, guatiao::FromValue, guatiao::Schema)]
+/// unknown key is refused; a duration is a number of seconds or a number with a unit (`30`, `250ms`),
+/// and `never` is no bound on a timeout. The type is a `coqui-builder` setting: read it by filling a
+/// `Partial<ListenerSettings>` and building it. It is `#[non_exhaustive]`: start from [`Default`]
+/// and assign the fields.
+#[derive(Clone, Debug, PartialEq, Eq, Describe)]
 #[map(deny_unknown_fields)]
+#[builder(setters_on = ListenerBuilder)]
 #[non_exhaustive]
 pub struct ListenerSettings {
     /// Windows: accepts clients from other hosts. Off by default, by `PIPE_REJECT_REMOTE_CLIENTS`.
@@ -95,17 +163,16 @@ pub struct ListenerSettings {
     #[map(default = ListenerSettings::new().buffer_size)]
     pub buffer_size: u32,
     /// Unix: the socket's mode, from the moment the path exists, any of `0` to `0o7777`; `0o600`
-    /// (384 as a number in text) by default. Another is reported by
-    /// [`non_defaults`](Self::non_defaults), never refused.
+    /// by default. Another is reported by [`non_defaults`](ListenerSettings::non_defaults), never refused.
     #[map(default = ListenerSettings::new().socket_mode)]
-    pub socket_mode: u32,
+    pub socket_mode: SocketMode,
     /// Unix: the socket's group, from the moment the path exists, so a mode with group access
     /// (`0o660`) shares it with that group and no other: an id, or a name looked up when binding
     /// ([`Error::UnknownGroup`] when there is none). In text, digits alone are an id. The process
     /// must be root or a member of the group, or the bind is [`Error::GroupDenied`]. A group other
-    /// than the process's own is reported by [`non_defaults`](Self::non_defaults). On Windows it is
+    /// than the process's own is reported by [`non_defaults`](ListenerSettings::non_defaults). On Windows it is
     /// [`Error::InvalidOptions`].
-    pub socket_group: Option<String>,
+    pub socket_group: Option<SocketGroup>,
     /// Unix: binds even when others can write a directory on the way to the socket, or another user
     /// owns one. Off by default: such a user could replace the socket, and clients would reach
     /// theirs.
@@ -118,13 +185,13 @@ pub struct ListenerSettings {
     /// Unix: how many connections wait for `accept`, up to the system's own limit.
     #[map(default = ListenerSettings::new().backlog)]
     pub backlog: i32,
-    /// The bound on each read of an accepted [`Stream`]; [`Duration::MAX`] waits forever. The async
+    /// The bound on each read of an accepted [`Stream`]; `never` (`None`) waits forever. The async
     /// streams have none: wrap their calls in tokio's timer.
-    #[map(default = ListenerSettings::new().read_timeout)]
-    pub read_timeout: Duration,
-    /// The bound on each write of an accepted [`Stream`]; [`Duration::MAX`] waits forever.
-    #[map(default = ListenerSettings::new().write_timeout)]
-    pub write_timeout: Duration,
+    #[map(default = Some(DEFAULT_IO_TIMEOUT), none = "never")]
+    pub read_timeout: Option<Duration>,
+    /// The bound on each write of an accepted [`Stream`]; `never` (`None`) waits forever.
+    #[map(default = Some(DEFAULT_IO_TIMEOUT), none = "never")]
+    pub write_timeout: Option<Duration>,
 }
 
 impl Default for ListenerSettings {
@@ -133,8 +200,7 @@ impl Default for ListenerSettings {
     }
 }
 
-/// The keys of [`ListenerSettings`] that mean something on this platform, and the ones that do
-/// not but are never refused.
+/// The keys of [`ListenerSettings`] that mean something on this platform.
 #[cfg(windows)]
 const LISTENER_APPLIED: &[&str] = &[
     "remote_clients",
@@ -145,8 +211,14 @@ const LISTENER_APPLIED: &[&str] = &[
     "read_timeout",
     "write_timeout",
 ];
+/// The keys that mean nothing on this platform and are never refused.
 #[cfg(windows)]
 const LISTENER_IGNORED: &[&str] = &["socket_mode", "shared_directory", "backlog"];
+/// The keys that are refused when set stricter than their default, since this platform cannot
+/// honour them.
+#[cfg(windows)]
+#[cfg(test)]
+const LISTENER_REFUSED: &[&str] = &["socket_group", "remove_stale"];
 #[cfg(not(windows))]
 const LISTENER_APPLIED: &[&str] = &[
     "socket_mode",
@@ -159,6 +231,9 @@ const LISTENER_APPLIED: &[&str] = &[
 ];
 #[cfg(not(windows))]
 const LISTENER_IGNORED: &[&str] = &["buffer_size", "remote_clients", "first_instance"];
+#[cfg(not(windows))]
+#[cfg(test)]
+const LISTENER_REFUSED: &[&str] = &["security_descriptor", "max_instances"];
 
 impl ListenerSettings {
     /// Every setting at its default.
@@ -174,8 +249,8 @@ impl ListenerSettings {
             shared_directory: false,
             remove_stale: true,
             backlog: DEFAULT_BACKLOG,
-            read_timeout: DEFAULT_IO_TIMEOUT,
-            write_timeout: DEFAULT_IO_TIMEOUT,
+            read_timeout: Some(DEFAULT_IO_TIMEOUT),
+            write_timeout: Some(DEFAULT_IO_TIMEOUT),
         }
     }
 
@@ -183,11 +258,7 @@ impl ListenerSettings {
     /// key. A socket group is listed only when it is not the process's own.
     #[must_use]
     pub fn non_defaults(&self) -> Vec<NonDefault> {
-        NonDefault::of_settings(self)
-            .into_iter()
-            .filter(|setting| LISTENER_APPLIED.contains(&setting.setting.as_str()))
-            .filter(|setting| setting.setting != "socket_group" || self.group_differs())
-            .collect()
+        applied(coqui_builder::non_defaults(self), self.group_differs())
     }
 
     /// Settings changed from their default that this platform cannot honour, reported rather than
@@ -196,10 +267,7 @@ impl ListenerSettings {
     /// would be stricter than the default is not here: it is [`Error::InvalidOptions`] at bind.
     #[must_use]
     pub fn not_applied(&self) -> Vec<NonDefault> {
-        NonDefault::of_settings(self)
-            .into_iter()
-            .filter(|setting| LISTENER_IGNORED.contains(&setting.setting.as_str()))
-            .collect()
+        ignored(coqui_builder::non_defaults(self))
     }
 
     /// Whether a setting stricter than the default cannot be honoured here.
@@ -213,8 +281,9 @@ impl ListenerSettings {
 
     #[cfg(unix)]
     fn group_differs(&self) -> bool {
-        self.group()
-            .is_some_and(|group| crate::sys::group_differs(&group))
+        self.socket_group
+            .as_ref()
+            .is_some_and(crate::sys::group_differs)
     }
 
     #[cfg(not(unix))]
@@ -222,30 +291,14 @@ impl ListenerSettings {
         self.socket_group.is_some()
     }
 
-    /// The socket's group.
-    pub(crate) fn group(&self) -> Option<Group> {
-        self.socket_group.as_deref().map(Group::of)
-    }
-
-    /// The bound on each read of an accepted stream, if any.
-    pub(crate) fn read(&self) -> Option<Duration> {
-        bounded(self.read_timeout)
-    }
-
-    /// The bound on each write of an accepted stream, if any.
-    pub(crate) fn write(&self) -> Option<Duration> {
-        bounded(self.write_timeout)
-    }
-
     pub(crate) fn check(&self) -> Result<(), Error> {
         let instances_are_valid = (2..=UNLIMITED_INSTANCES).contains(&self.max_instances);
-        let mode_is_valid = self.socket_mode <= 0o7777;
+        let mode_is_valid = self.socket_mode.get() <= 0o7777;
         let backlog_is_valid = self.backlog > 0;
-        let group_is_valid = match self.group() {
-            None => true,
-            Some(Group::Name(name)) => cfg!(unix) && !name.is_empty() && !name.contains('\0'),
-            Some(Group::Id(_)) => cfg!(unix),
-        };
+        let group_is_valid = self
+            .socket_group
+            .as_ref()
+            .is_none_or(|group| cfg!(unix) && group.is_writable());
         if instances_are_valid
             && group_is_valid
             && !self.unsupported()
@@ -265,138 +318,36 @@ impl ListenerSettings {
     }
 }
 
-/// Builds a [`Listener`]: [`Listener::builder`], the settings, then [`build`](Self::build).
+/// The parts a [`ListenerBuilder`] gathers: the settings and the name to bind.
+///
+/// Made by [`ListenerBuilder::parts`]; [`build`](ListenerBuilder::build) and
+/// [`build_async`](ListenerBuilder::build_async) convert it.
 ///
 /// Every setting that differs from its default and means something on this platform is listed by
-/// [`non_defaults`](Self::non_defaults) and logged at `debug` through `tracing` when binding. The
-/// crate reports and does not judge: whether one was meant is the caller's to say.
-#[derive(Clone, Debug)]
-#[must_use]
-pub struct ListenerBuilder {
-    name: PipeName,
+/// [`Listener::non_defaults`] and logged at `debug` through `tracing` when binding. The crate
+/// reports and does not judge: whether one was meant is the caller's to say.
+#[derive(Builder, Debug)]
+#[builder(build = Listener, fallible)]
+pub struct ListenerParts {
     settings: ListenerSettings,
+    #[builder(input)]
+    name: PipeName,
+}
+
+impl TryFrom<ListenerParts> for Listener {
+    type Error = Error;
+
+    fn try_from(parts: ListenerParts) -> Result<Self, Error> {
+        Self::with_settings(&parts.name, parts.settings)
+    }
 }
 
 impl ListenerBuilder {
-    pub(crate) fn new(name: &PipeName) -> Self {
-        Self {
-            name: name.clone(),
-            settings: ListenerSettings::new(),
-        }
-    }
-
-    /// Windows: accepts clients from other hosts; see [`ListenerSettings::remote_clients`].
-    pub fn remote_clients(mut self, allow: bool) -> Self {
-        self.settings.remote_clients = allow;
-        self
-    }
-
-    /// Windows: this descriptor, in SDDL; see [`ListenerSettings::security_descriptor`].
-    pub fn security_descriptor(mut self, sddl: impl Into<String>) -> Self {
-        self.settings.security_descriptor = Some(sddl.into());
-        self
-    }
-
-    /// Windows: refuses a name that already exists; see [`ListenerSettings::first_instance`].
-    pub fn first_instance(mut self, first: bool) -> Self {
-        self.settings.first_instance = first;
-        self
-    }
-
-    /// Windows: the most instances of this pipe at once; see [`ListenerSettings::max_instances`].
-    pub fn max_instances(mut self, instances: u32) -> Self {
-        self.settings.max_instances = instances;
-        self
-    }
-
-    /// Windows: the size of each direction's buffer of an instance; see
-    /// [`ListenerSettings::buffer_size`].
-    pub fn buffer_size(mut self, bytes: u32) -> Self {
-        self.settings.buffer_size = bytes;
-        self
-    }
-
-    /// Unix: the socket's mode; see [`ListenerSettings::socket_mode`].
-    pub fn socket_mode(mut self, mode: u32) -> Self {
-        self.settings.socket_mode = mode;
-        self
-    }
-
-    /// Unix: the socket's group, by id; see [`ListenerSettings::socket_group`]. Replaces a group set
-    /// before by id or by name.
-    pub fn socket_group(mut self, group: u32) -> Self {
-        self.settings.socket_group = Some(group.to_string());
-        self
-    }
-
-    /// Unix: the socket's group, the one named `name`, looked up when binding. Replaces a group set
-    /// before by id or by name.
-    pub fn socket_group_name(mut self, name: impl Into<String>) -> Self {
-        self.settings.socket_group = Some(name.into());
-        self
-    }
-
-    /// Unix: binds even when others can write a directory on the way to the socket; see
-    /// [`ListenerSettings::shared_directory`].
-    pub fn shared_directory(mut self, allow: bool) -> Self {
-        self.settings.shared_directory = allow;
-        self
-    }
-
-    /// Unix: removes a socket left at the path once nothing listens on it; see
-    /// [`ListenerSettings::remove_stale`].
-    pub fn remove_stale(mut self, remove: bool) -> Self {
-        self.settings.remove_stale = remove;
-        self
-    }
-
-    /// Unix: how many connections wait for `accept`; see [`ListenerSettings::backlog`].
-    pub fn backlog(mut self, connections: i32) -> Self {
-        self.settings.backlog = connections;
-        self
-    }
-
-    /// The bound on each read of an accepted [`Stream`]; see [`ListenerSettings::read_timeout`].
-    pub fn read_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.read_timeout = timeout;
-        self
-    }
-
-    /// The bound on each write of an accepted [`Stream`]; see [`ListenerSettings::write_timeout`].
-    pub fn write_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.write_timeout = timeout;
-        self
-    }
-
-    /// Every setting from `settings`. Replaces what the setters set before, and is replaced by what
-    /// they set after it. The name is an argument, not a setting, and stays.
-    pub fn settings(mut self, settings: ListenerSettings) -> Self {
-        self.settings = settings;
-        self
-    }
-
-    /// Every setting that differs from its default and means something on this platform.
-    #[must_use]
-    pub fn non_defaults(&self) -> Vec<NonDefault> {
-        self.settings.non_defaults()
-    }
-
     /// Settings changed from their default that this platform cannot honour; see
     /// [`ListenerSettings::not_applied`].
     #[must_use]
     pub fn not_applied(&self) -> Vec<NonDefault> {
-        self.settings.not_applied()
-    }
-
-    /// Binds the name: see [`Listener::bind`].
-    ///
-    /// # Errors
-    ///
-    /// As [`Listener::bind`]; [`Error::InvalidOptions`] for a value that means nothing, and for a
-    /// setting stricter than the default that this platform cannot honour: a socket group, or a stale
-    /// socket kept, on Windows; a security descriptor or an instance limit on Unix.
-    pub fn build(self) -> Result<Listener, Error> {
-        Listener::with_settings(&self.name, self.settings)
+        ignored(Configured::non_defaults(self))
     }
 
     /// As [`build`](Self::build), as an `asynch::Listener`. Its timeouts belong to blocking streams
@@ -407,18 +358,21 @@ impl ListenerBuilder {
     /// As [`build`](Self::build).
     #[cfg(feature = "tokio")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
-    pub fn build_async(self) -> Result<crate::asynch::Listener, Error> {
-        crate::asynch::Listener::with_settings(&self.name, self.settings)
+    pub fn build_async(self) -> Result<crate::asynch::Listener, crate::BuildError<Error>> {
+        let parts = self.parts().map_err(crate::BuildError::Missing)?;
+        crate::asynch::Listener::with_settings(&parts.name, parts.settings)
+            .map_err(crate::BuildError::Failed)
     }
 }
 
-/// What a [`ConnectBuilder`] takes whole through `settings`, in the form a file, a form or a peer
+/// What a [`ConnectBuilder`] takes whole through `fill`, in the form a file, a form or a peer
 /// fills.
 ///
 /// Read as [`ListenerSettings`] is. It is `#[non_exhaustive]`: start from [`Default`] and assign the
 /// fields.
-#[derive(Clone, Debug, PartialEq, Eq, guatiao::ToValue, guatiao::FromValue, guatiao::Schema)]
+#[derive(Clone, Debug, PartialEq, Eq, Describe)]
 #[map(deny_unknown_fields)]
+#[builder(setters_on = ConnectBuilder)]
 #[non_exhaustive]
 pub struct ConnectSettings {
     /// How long to wait for a free instance or a place in the queue. A name nobody listens on fails
@@ -431,13 +385,13 @@ pub struct ConnectSettings {
     /// is and cannot act as it.
     #[map(default = ConnectSettings::new().impersonation)]
     pub impersonation: bool,
-    /// The bound on each read of the [`Stream`]; [`Duration::MAX`] waits forever. The async streams
+    /// The bound on each read of the [`Stream`]; `never` (`None`) waits forever. The async streams
     /// have none: wrap their calls in tokio's timer.
-    #[map(default = ConnectSettings::new().read_timeout)]
-    pub read_timeout: Duration,
-    /// The bound on each write of the [`Stream`]; [`Duration::MAX`] waits forever.
-    #[map(default = ConnectSettings::new().write_timeout)]
-    pub write_timeout: Duration,
+    #[map(default = Some(DEFAULT_IO_TIMEOUT), none = "never")]
+    pub read_timeout: Option<Duration>,
+    /// The bound on each write of the [`Stream`]; `never` (`None`) waits forever.
+    #[map(default = Some(DEFAULT_IO_TIMEOUT), none = "never")]
+    pub write_timeout: Option<Duration>,
 }
 
 impl Default for ConnectSettings {
@@ -452,8 +406,8 @@ impl ConnectSettings {
         Self {
             timeout: DEFAULT_CONNECT_TIMEOUT,
             impersonation: false,
-            read_timeout: DEFAULT_IO_TIMEOUT,
-            write_timeout: DEFAULT_IO_TIMEOUT,
+            read_timeout: Some(DEFAULT_IO_TIMEOUT),
+            write_timeout: Some(DEFAULT_IO_TIMEOUT),
         }
     }
 
@@ -461,21 +415,14 @@ impl ConnectSettings {
     /// Unix, where there is no impersonation level to raise. Reported, never dropped.
     #[must_use]
     pub fn not_applied(&self) -> Vec<NonDefault> {
-        if cfg!(unix) {
-            NonDefault::of_settings(self)
-                .into_iter()
-                .filter(|setting| setting.setting == "impersonation")
-                .collect()
-        } else {
-            Vec::new()
-        }
+        connect_ignored(coqui_builder::non_defaults(self))
     }
 
     /// Every setting that differs from its default and means something on this platform, named by
     /// key.
     #[must_use]
     pub fn non_defaults(&self) -> Vec<NonDefault> {
-        NonDefault::of_settings(self)
+        coqui_builder::non_defaults(self)
             .into_iter()
             .filter(|setting| !(cfg!(unix) && setting.setting == "impersonation"))
             .collect()
@@ -486,16 +433,6 @@ impl ConnectSettings {
         let mut settings = self.clone();
         settings.timeout = timeout;
         settings
-    }
-
-    /// The bound on each read of the stream, if any.
-    pub(crate) fn read(&self) -> Option<Duration> {
-        bounded(self.read_timeout)
-    }
-
-    /// The bound on each write of the stream, if any.
-    pub(crate) fn write(&self) -> Option<Duration> {
-        bounded(self.write_timeout)
     }
 
     pub(crate) fn check(&self) -> Result<(), Error> {
@@ -512,77 +449,35 @@ impl ConnectSettings {
     }
 }
 
-/// Builds a connection: [`Stream::builder`], the settings, then [`build`](Self::build).
+/// The parts a [`ConnectBuilder`] gathers: the settings and the name to connect to.
 ///
-/// Every setting that differs from its default and means something on this platform is listed by
-/// [`non_defaults`](Self::non_defaults) and logged at `debug` through `tracing` when connecting.
-#[derive(Clone, Debug)]
-#[must_use]
-pub struct ConnectBuilder {
-    name: PipeName,
+/// Made by [`ConnectBuilder::parts`]; [`build`](ConnectBuilder::build) and
+/// [`build_async`](ConnectBuilder::build_async) convert it.
+///
+/// Every setting that differs from its default and means something on this platform is logged at
+/// `debug` through `tracing` when connecting.
+#[derive(Builder, Debug)]
+#[builder(build = Stream, name = "ConnectBuilder", fallible)]
+pub struct ConnectParts {
     settings: ConnectSettings,
+    #[builder(input)]
+    name: PipeName,
+}
+
+impl TryFrom<ConnectParts> for Stream {
+    type Error = Error;
+
+    fn try_from(parts: ConnectParts) -> Result<Self, Error> {
+        Self::with_settings(&parts.name, parts.settings)
+    }
 }
 
 impl ConnectBuilder {
-    pub(crate) fn new(name: &PipeName) -> Self {
-        Self {
-            name: name.clone(),
-            settings: ConnectSettings::new(),
-        }
-    }
-
-    /// How long to wait for a free instance or a place in the queue; see
-    /// [`ConnectSettings::timeout`].
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.settings.timeout = timeout;
-        self
-    }
-
-    /// Windows: lets the server act as this client; see [`ConnectSettings::impersonation`].
-    pub fn impersonation(mut self, allow: bool) -> Self {
-        self.settings.impersonation = allow;
-        self
-    }
-
-    /// The bound on each read of the [`Stream`]; see [`ConnectSettings::read_timeout`].
-    pub fn read_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.read_timeout = timeout;
-        self
-    }
-
-    /// The bound on each write of the [`Stream`]; see [`ConnectSettings::write_timeout`].
-    pub fn write_timeout(mut self, timeout: Duration) -> Self {
-        self.settings.write_timeout = timeout;
-        self
-    }
-
-    /// Every setting from `settings`. Replaces what the setters set before, and is replaced by what
-    /// they set after it. The name is an argument, not a setting, and stays.
-    pub fn settings(mut self, settings: ConnectSettings) -> Self {
-        self.settings = settings;
-        self
-    }
-
     /// Settings changed from their default that this platform cannot honour; see
     /// [`ConnectSettings::not_applied`].
     #[must_use]
     pub fn not_applied(&self) -> Vec<NonDefault> {
-        self.settings.not_applied()
-    }
-
-    /// Every setting that differs from its default and means something on this platform.
-    #[must_use]
-    pub fn non_defaults(&self) -> Vec<NonDefault> {
-        self.settings.non_defaults()
-    }
-
-    /// Connects to the name: see [`Stream::connect`].
-    ///
-    /// # Errors
-    ///
-    /// As [`Stream::connect`]; [`Error::InvalidOptions`] for a zero duration.
-    pub fn build(self) -> Result<Stream, Error> {
-        Stream::with_settings(&self.name, self.settings)
+        connect_ignored(Configured::non_defaults(self))
     }
 
     /// As [`build`](Self::build), as an `asynch::Stream`. Its read and write timeouts belong to
@@ -593,13 +488,44 @@ impl ConnectBuilder {
     /// As [`build`](Self::build).
     #[cfg(feature = "tokio")]
     #[cfg_attr(docsrs, doc(cfg(feature = "tokio")))]
-    pub async fn build_async(self) -> Result<crate::asynch::Stream, Error> {
-        crate::asynch::Stream::with_settings(&self.name, self.settings).await
+    pub async fn build_async(self) -> Result<crate::asynch::Stream, crate::BuildError<Error>> {
+        let parts = self.parts().map_err(crate::BuildError::Missing)?;
+        crate::asynch::Stream::with_settings(&parts.name, parts.settings)
+            .await
+            .map_err(crate::BuildError::Failed)
     }
 }
 
-fn timeouts_are_valid(read: Duration, write: Duration) -> bool {
-    !read.is_zero() && !write.is_zero()
+/// The differences that mean something here, with the socket group only when `group_differs`.
+fn applied(found: Vec<NonDefault>, group_differs: bool) -> Vec<NonDefault> {
+    found
+        .into_iter()
+        .filter(|setting| LISTENER_APPLIED.contains(&setting.setting.as_str()))
+        .filter(|setting| setting.setting != "socket_group" || group_differs)
+        .collect()
+}
+
+/// The differences that mean nothing here.
+fn ignored(found: Vec<NonDefault>) -> Vec<NonDefault> {
+    found
+        .into_iter()
+        .filter(|setting| LISTENER_IGNORED.contains(&setting.setting.as_str()))
+        .collect()
+}
+
+fn connect_ignored(found: Vec<NonDefault>) -> Vec<NonDefault> {
+    if cfg!(unix) {
+        found
+            .into_iter()
+            .filter(|setting| setting.setting == "impersonation")
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+fn timeouts_are_valid(read: Option<Duration>, write: Option<Duration>) -> bool {
+    !read.is_some_and(|bound| bound.is_zero()) && !write.is_some_and(|bound| bound.is_zero())
 }
 
 fn log_not_applied(list: &[NonDefault]) {
@@ -620,6 +546,58 @@ fn log(list: &[NonDefault]) {
             value = %different.value,
             default = %different.default,
             "a pipe setting differs from its default"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use coqui_builder::Describe;
+
+    use super::{
+        ConnectSettings, LISTENER_APPLIED, LISTENER_IGNORED, LISTENER_REFUSED, ListenerSettings,
+    };
+
+    /// Every key of the listener settings is told apart on this platform: it means something, it
+    /// means nothing and is never refused, or it is refused when stricter than its default. A new
+    /// key that is in none of the lists would be dropped from every report.
+    #[test]
+    fn every_listener_key_is_applied_ignored_or_refused_exactly_once() {
+        let description = ListenerSettings::description();
+        let keys: Vec<&str> = description
+            .group_fields()
+            .expect("the settings are a group")
+            .iter()
+            .map(|field| field.key.as_str())
+            .collect();
+        for key in &keys {
+            let lists = [LISTENER_APPLIED, LISTENER_IGNORED, LISTENER_REFUSED]
+                .iter()
+                .filter(|list| list.contains(key))
+                .count();
+            assert_eq!(lists, 1, "{key} is in {lists} of the three lists");
+        }
+        for key in LISTENER_APPLIED
+            .iter()
+            .chain(LISTENER_IGNORED)
+            .chain(LISTENER_REFUSED)
+        {
+            assert!(keys.contains(key), "{key} is not a key");
+        }
+    }
+
+    #[test]
+    fn the_connect_keys_are_the_ones_the_reports_know() {
+        let description = ConnectSettings::description();
+        let keys: Vec<&str> = description
+            .group_fields()
+            .expect("the settings are a group")
+            .iter()
+            .map(|field| field.key.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            ["timeout", "impersonation", "read_timeout", "write_timeout"]
         );
     }
 }

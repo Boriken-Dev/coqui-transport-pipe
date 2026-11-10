@@ -9,7 +9,7 @@ use coqui_peer::{ReadTimeout, WriteTimeout};
 use crate::error::Error;
 use crate::identity::OsIdentity;
 use crate::name::PipeName;
-use crate::options::{ConnectBuilder, ConnectSettings};
+use crate::options::ConnectSettings;
 use crate::sys;
 
 /// One connection over a pipe or a socket: bytes in order, both ways, between two processes.
@@ -37,11 +37,6 @@ impl Stream {
     /// [`Error::NotListening`], [`Error::AccessDenied`], [`Error::TimedOut`], or [`Error::Io`].
     pub fn connect(name: &PipeName) -> Result<Self, Error> {
         Self::with_settings(name, ConnectSettings::new())
-    }
-
-    /// A builder for a connection to `name`, with every setting at its default.
-    pub fn builder(name: &PipeName) -> ConnectBuilder {
-        ConnectBuilder::new(name)
     }
 
     pub(crate) fn with_settings(name: &PipeName, options: ConnectSettings) -> Result<Self, Error> {
