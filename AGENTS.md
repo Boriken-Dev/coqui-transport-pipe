@@ -32,8 +32,8 @@ returned by `non_defaults()` (what, its default and its value) and logged at `de
 warned: the crate reports and the caller decides. Nothing reads a file or an environment
 variable unless the caller asks: `PipeName::named` and parsing `pipe:NAME` read two on Unix.
 
-Tested on Windows, Linux and FreeBSD (14.5: `getpeereid`, which gives no process there). The macOS path (`getpeereid`, `LOCAL_PEERPID`) is written and has not been
-run.
+Tested on Windows, Linux, FreeBSD (14.5: `getpeereid`, which gives no process there) and macOS (15.7, x86-64:
+`getpeereid` and `LOCAL_PEERPID`).
 
 ## Names (`coqui_transport_pipe::PipeName`)
 
@@ -205,7 +205,8 @@ impl ConnectSettings { pub const fn new() -> Self; pub fn non_defaults(&self) ->
 
 Every duration in this crate, settings and calls alike, that is too long for the clock (`Duration::MAX`) waits as
 `None` would. On Unix a write to a peer that left is `BrokenPipe` and never raises SIGPIPE, whatever the
-process's disposition (`MSG_NOSIGNAL`, `SO_NOSIGPIPE` on Apple's systems).
+process's disposition (`MSG_NOSIGNAL`, `SO_NOSIGPIPE` on Apple's systems). A stream accepted from a client that left
+before the accept still reads what it sent and the end; a write to it is `BrokenPipe`.
 
 A read past its timeout is `TimedOut`, on both platforms, and loses nothing. `Ok(0)` is the peer's end, and what
 the peer wrote before closing is read first. `flush` does nothing: a write is on its way when it returns. A
@@ -326,8 +327,12 @@ only when absolute.
 - Windows: two clients can wait connected before an `accept`, on the waiting instance and the next; another then
   waits in `connect` until an `accept` makes room. There is no backlog setting.
 - Unix: the bind's liveness probe takes a refused connect for a stale socket. A system that refuses a connect to a
-  full queue (FreeBSD; not measured on macOS) can therefore make another program's live, saturated socket look
-  stale; this crate's own listeners are protected by `<path>.lock`.
+  full queue (FreeBSD 14.5 and macOS 15.7, both `ECONNREFUSED`, where Linux makes it wait: `connect` is then
+  `NotListening` at once, whatever its timeout) can therefore make another program's live, saturated socket look
+  stale (measured on macOS: `bind` replaces it); this crate's own listeners are protected by `<path>.lock`.
+- macOS: `setsockopt` answers `EINVAL` on a socket whose peer has closed it (`SO_RCVTIMEO`, `SO_SNDTIMEO` and
+  `SO_NOSIGPIPE`; not after the peer's `shutdown(Write)` alone), while reading what it sent and the end still works. On
+  such a stream the timeouts are accepted and do nothing, as nothing waits on it.
 - `<path>.lock` stays beside a Unix socket by design: removing it would let two binders hold locks on two files.
 - Windows, async: `poll_shutdown` ends nothing, so an async `StreamChannel`'s `close` does not end the stream for the peer
   until the stream is dropped.

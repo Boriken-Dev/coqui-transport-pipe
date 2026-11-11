@@ -85,6 +85,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - The crate depends on `coqui-transport` by git revision, and no longer on `coqui-web-channel` or, for its tests, on
   `coqui-agentic-peer`.
 
+### Fixed
+
+- macOS: a client that left before the accept no longer fails the accept, and a deadline read no longer fails once the
+  other side finished and closed its end: the system refuses socket options on a socket whose peer closed it. Such a
+  stream reads what is left and the end; a write is `BrokenPipe`, never SIGPIPE.
+- macOS is tested, and a full accept queue refuses a connect there (`NotListening`) as on FreeBSD; the tests and the notes
+  say so.
+
 ### Removed
 
 - `Listener::builder(&name)` and `Stream::builder(&name)` taking the name: it is `builder().name(&name)`.
