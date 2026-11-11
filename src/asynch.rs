@@ -116,9 +116,8 @@ impl Waiting {
 
     async fn accept(&mut self) -> Result<Stream, Error> {
         let (socket, _) = self.socket.accept().await?;
-        sys::no_sigpipe(&socket)?;
         Ok(Stream {
-            inner: Inner::Socket(socket),
+            inner: Inner::marked(socket)?,
         })
     }
 }
@@ -162,6 +161,10 @@ impl Waiting {
 enum Inner {
     #[cfg(unix)]
     Socket(tokio::net::UnixStream),
+    /// A socket whose peer left before it could be marked against SIGPIPE: it reads what was left
+    /// and the end, and a write is `BrokenPipe` without reaching the system.
+    #[cfg(unix)]
+    Departed(tokio::net::UnixStream),
     #[cfg(windows)]
     Server(NamedPipeServer),
     #[cfg(windows)]
@@ -215,7 +218,7 @@ impl Stream {
     pub fn peer(&self) -> io::Result<OsIdentity> {
         match &self.inner {
             #[cfg(unix)]
-            Inner::Socket(socket) => sys::peer_of(socket),
+            Inner::Socket(socket) | Inner::Departed(socket) => sys::peer_of(socket),
             #[cfg(windows)]
             Inner::Server(pipe) => Ok(sys::peer_of_tokio(pipe, true)),
             #[cfg(windows)]
@@ -226,6 +229,15 @@ impl Stream {
 
 impl Inner {
     #[cfg(unix)]
+    fn marked(socket: tokio::net::UnixStream) -> io::Result<Self> {
+        Ok(if sys::no_sigpipe(&socket)? {
+            Self::Socket(socket)
+        } else {
+            Self::Departed(socket)
+        })
+    }
+
+    #[cfg(unix)]
     fn try_connect(
         name: &PipeName,
         _options: &ConnectSettings,
@@ -234,10 +246,9 @@ impl Inner {
         match sys::try_connect(name.path(), deadline)? {
             Some(socket) => {
                 socket.set_nonblocking(true)?;
-                sys::no_sigpipe(&socket)?;
-                Ok(Some(Self::Socket(tokio::net::UnixStream::from_std(
+                Ok(Some(Self::marked(tokio::net::UnixStream::from_std(
                     socket,
-                )?)))
+                )?)?))
             }
             None => Ok(None),
         }
@@ -261,7 +272,7 @@ macro_rules! dispatch {
     ($self:ident, $inner:ident => $call:expr) => {
         match &mut $self.get_mut().inner {
             #[cfg(unix)]
-            Inner::Socket($inner) => $call,
+            Inner::Socket($inner) | Inner::Departed($inner) => $call,
             #[cfg(windows)]
             Inner::Server($inner) => $call,
             #[cfg(windows)]
@@ -298,6 +309,8 @@ impl AsyncWrite for Stream {
                     other => return Poll::Ready(other),
                 }
             },
+            #[cfg(unix)]
+            Inner::Departed(_) => Poll::Ready(Err(io::ErrorKind::BrokenPipe.into())),
             #[cfg(windows)]
             Inner::Server(pipe) => Pin::new(pipe).poll_write(context, buffer),
             #[cfg(windows)]

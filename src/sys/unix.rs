@@ -42,6 +42,9 @@ pub(crate) fn current_user() -> io::Result<String> {
 #[derive(Debug)]
 pub(crate) struct Stream {
     socket: UnixStream,
+    /// The peer was gone before the socket could be marked against SIGPIPE: it reads what was left
+    /// and the end, and a write is `BrokenPipe` without reaching the system.
+    departed: bool,
 }
 
 impl Stream {
@@ -50,10 +53,11 @@ impl Stream {
         read: Option<Duration>,
         write: Option<Duration>,
     ) -> io::Result<Self> {
-        socket.set_read_timeout(read)?;
-        socket.set_write_timeout(write)?;
-        no_sigpipe(&socket)?;
-        Ok(Self { socket })
+        let departed = !no_sigpipe(&socket)?;
+        let stream = Self { socket, departed };
+        stream.set_read_timeout(read)?;
+        stream.set_write_timeout(write)?;
+        Ok(stream)
     }
 
     pub(crate) fn connect(name: &PipeName, options: &ConnectSettings) -> Result<Self, Error> {
@@ -82,16 +86,19 @@ impl Stream {
     }
 
     pub(crate) fn write(&self, buffer: &[u8]) -> io::Result<usize> {
+        if self.departed {
+            return Err(io::ErrorKind::BrokenPipe.into());
+        }
         let chunk = &buffer[..buffer.len().min(MAX_WRITE)];
         send(&self.socket, chunk).map_err(one_timeout)
     }
 
     pub(crate) fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
-        self.socket.set_read_timeout(timeout)
+        tolerate_departure(&self.socket, self.socket.set_read_timeout(timeout))
     }
 
     pub(crate) fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
-        self.socket.set_write_timeout(timeout)
+        tolerate_departure(&self.socket, self.socket.set_write_timeout(timeout))
     }
 
     pub(crate) fn peer(&self) -> io::Result<OsIdentity> {
@@ -133,11 +140,43 @@ pub(crate) fn send(socket: &impl AsFd, buffer: &[u8]) -> io::Result<usize> {
 }
 
 /// Marks `socket` so that writing to it never raises SIGPIPE, where the system needs a mark for that.
-pub(crate) fn no_sigpipe(socket: &impl AsFd) -> io::Result<()> {
-    #[cfg(target_vendor = "apple")]
-    SockRef::from(socket).set_nosigpipe(true)?;
+/// `false` when the peer had already left, which Apple's systems refuse the mark for: nothing may be
+/// written to such a socket, as it cannot be made safe.
+#[cfg(target_vendor = "apple")]
+pub(crate) fn no_sigpipe(socket: &impl AsFd) -> io::Result<bool> {
+    match SockRef::from(socket).set_nosigpipe(true) {
+        Ok(()) => Ok(true),
+        Err(error) => tolerate_departure(socket, Err(error)).map(|()| false),
+    }
+}
+
+/// Marks `socket` so that writing to it never raises SIGPIPE, where the system needs a mark for that.
+#[cfg(not(target_vendor = "apple"))]
+pub(crate) fn no_sigpipe(socket: &impl AsFd) -> io::Result<bool> {
     let _ = socket;
-    Ok(())
+    Ok(true)
+}
+
+/// Apple's systems answer `EINVAL` to a socket option on a socket whose peer closed it, though
+/// reading what it sent and the end still works. Such a socket needs no timeout, as nothing waits on
+/// it, so that answer is not an error there.
+#[cfg(target_vendor = "apple")]
+fn tolerate_departure(socket: &impl AsFd, result: io::Result<()>) -> io::Result<()> {
+    match result {
+        Err(error)
+            if error.raw_os_error() == Some(libc::EINVAL)
+                && SockRef::from(socket).peer_addr().is_err() =>
+        {
+            Ok(())
+        }
+        other => other,
+    }
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn tolerate_departure(socket: &impl AsFd, result: io::Result<()>) -> io::Result<()> {
+    let _ = socket;
+    result
 }
 
 /// A timed-out socket call is `WouldBlock` here and `TimedOut` on Windows; a caller sees one.

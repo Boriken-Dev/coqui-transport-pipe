@@ -37,6 +37,12 @@ pub fn expected_process() -> Option<u32> {
     (!cfg!(target_os = "freebsd")).then(std::process::id)
 }
 
+/// Whether a connect to a full accept queue fails at once: FreeBSD 14.5 and macOS 15.7 answer
+/// `ECONNREFUSED`, where Linux makes the connect wait.
+pub fn refuses_a_full_queue() -> bool {
+    cfg!(any(target_os = "freebsd", target_os = "macos"))
+}
+
 /// A new directory only its owner can use. Kept short: a socket path has a small limit.
 pub fn private_directory() -> tempfile::TempDir {
     tempfile::Builder::new()

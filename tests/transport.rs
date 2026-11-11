@@ -301,6 +301,28 @@ fn a_client_that_left_before_accept_does_not_end_the_listener() {
 }
 
 #[test]
+fn a_client_that_left_after_writing_leaves_its_bytes_and_takes_timeouts() {
+    let place = place("gone-wrote");
+    let listener = Listener::bind(&place.name).unwrap();
+    let mut client = Stream::connect(&place.name).unwrap();
+    client.write_all(b"hi").unwrap();
+    drop(client);
+    let mut server = listener.accept().unwrap();
+    // macOS answers EINVAL to a socket option once the peer has closed.
+    server
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    server
+        .set_write_timeout(Some(Duration::from_secs(1)))
+        .unwrap();
+    let mut bytes = [0; 2];
+    server.read_exact(&mut bytes).unwrap();
+    assert_eq!(&bytes, b"hi");
+    assert_eq!(server.read(&mut [0; 8]).unwrap(), 0);
+    assert!(server.write_all(b"x").is_err());
+}
+
+#[test]
 fn connecting_where_nothing_listens_fails_at_once() {
     let place = place("nobody");
     let started = Instant::now();

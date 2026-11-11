@@ -31,6 +31,33 @@ fn a_write_to_a_peer_that_left_is_a_broken_pipe_with_sigpipe_at_its_default() {
     assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
 }
 
+#[test]
+fn a_write_to_a_client_that_left_before_accept_is_a_broken_pipe_with_sigpipe_at_its_default() {
+    sigpipe_at_its_default();
+    let place = place("sigpipe-before-accept");
+    let listener = Listener::bind(&place.name).unwrap();
+    drop(Stream::connect(&place.name).unwrap());
+    let mut server = listener.accept().unwrap();
+    let error = server.write_all(b"x").unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+}
+
+#[cfg(feature = "tokio")]
+#[tokio::test]
+async fn an_async_write_to_a_client_that_left_before_accept_is_a_broken_pipe_with_sigpipe_at_its_default()
+ {
+    use coqui_transport_pipe::asynch;
+    use tokio::io::AsyncWriteExt;
+
+    sigpipe_at_its_default();
+    let place = place("sigpipe-before-accept-async");
+    let mut listener = asynch::Listener::bind(&place.name).unwrap();
+    drop(asynch::Stream::connect(&place.name).await.unwrap());
+    let mut server = listener.accept().await.unwrap();
+    let error = server.write_all(b"x").await.unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+}
+
 #[cfg(feature = "tokio")]
 #[tokio::test]
 async fn an_async_write_to_a_peer_that_left_is_a_broken_pipe_with_sigpipe_at_its_default() {

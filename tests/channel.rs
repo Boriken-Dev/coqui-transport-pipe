@@ -237,7 +237,8 @@ fn the_connector_and_the_listener_traits_give_streams_a_channel_runs_on() {
 fn the_connector_gives_its_timeout_to_the_connect() {
     use coqui_transport::Connector as _;
 
-    // Nothing accepts, so the queue fills (on Windows, the instances) and a connect waits for room.
+    // Nothing accepts, so the queue fills (on Windows, the instances) and a connect waits for room,
+    // or is refused where the system refuses a full queue.
     let place = place("full");
     let _listener = Listener::builder()
         .name(&place.name)
@@ -250,6 +251,13 @@ fn the_connector_gives_its_timeout_to_the_connect() {
         let started = Instant::now();
         match connector.connect(Duration::from_millis(300)) {
             Ok(stream) => held.push(stream),
+            Err(error) if support::refuses_a_full_queue() => {
+                assert!(
+                    matches!(error, coqui_transport_pipe::Error::NotListening),
+                    "{error:?}"
+                );
+                return;
+            }
             Err(error) => {
                 assert!(
                     matches!(error, coqui_transport_pipe::Error::TimedOut),

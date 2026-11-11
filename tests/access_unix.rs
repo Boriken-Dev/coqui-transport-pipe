@@ -18,7 +18,7 @@ use std::time::Duration;
 use coqui_transport_pipe::{
     BuildError, Error, Listener, PipeName, SocketGroup, Stream, current_user,
 };
-use support::{line, lines, place, private_directory, temp_base};
+use support::{line, lines, place, private_directory, refuses_a_full_queue, temp_base};
 
 fn mode(path: &Path) -> u32 {
     fs::symlink_metadata(path).unwrap().mode() & 0o7777
@@ -158,6 +158,36 @@ fn a_live_socket_of_another_program_is_not_replaced() {
     // The probe's connection, then this one: still the other program's socket.
     other.accept().unwrap();
     other.accept().unwrap();
+}
+
+#[test]
+fn another_programs_saturated_socket_is_judged_by_what_the_system_answers() {
+    use socket2::{Domain, SockAddr, Socket, Type};
+
+    let directory = private_directory();
+    let path = directory.path().join("s.sock");
+    let address = SockAddr::unix(&path).unwrap();
+    let other = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
+    other.bind(&address).unwrap();
+    other.listen(1).unwrap();
+    // Nothing accepts, so connects fill the queue until the system stops taking them.
+    let mut held = Vec::new();
+    loop {
+        let client = Socket::new(Domain::UNIX, Type::STREAM, None).unwrap();
+        client.set_nonblocking(true).unwrap();
+        if client.connect(&address).is_err() {
+            break;
+        }
+        held.push(client);
+        assert!(held.len() < 4096, "the backlog bounds the queue");
+    }
+    let result = Listener::bind(&PipeName::at(&path).unwrap());
+    if refuses_a_full_queue() {
+        // The probe is refused as it is by a socket nobody listens on, so the live socket is replaced.
+        assert!(result.is_ok(), "{result:?}");
+    } else {
+        assert!(matches!(result, Err(Error::NameTaken)), "{result:?}");
+    }
 }
 
 #[test]
@@ -359,8 +389,7 @@ fn a_full_queue_makes_a_client_wait_up_to_its_timeout() {
         }
         assert!(held.len() < 4096, "the backlog bounds the queue");
     };
-    // FreeBSD 14.5 refuses a connect to a full queue where Linux makes it wait.
-    if cfg!(target_os = "freebsd") {
+    if refuses_a_full_queue() {
         assert!(
             matches!(error, BuildError::Failed(Error::NotListening)),
             "{error:?}"
