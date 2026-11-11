@@ -410,8 +410,6 @@ fn connect_as_another_user(path: &Path) -> String {
 
 /// As [`connect_as_another_user`], as the given user and group.
 fn connect_as(path: &Path, uid: u32, gid: u32) -> String {
-    use std::os::unix::process::CommandExt;
-
     let shared = tempfile::Builder::new()
         .prefix("x")
         .tempdir_in(temp_base())
@@ -420,19 +418,47 @@ fn connect_as(path: &Path, uid: u32, gid: u32) -> String {
     let copy = shared.path().join("t");
     fs::copy(std::env::current_exe().unwrap(), &copy).unwrap();
     set_mode(&copy, 0o755);
-    let output = Command::new(&copy)
+    let mut command = Command::new(&copy);
+    command
         .args(["--exact", "prints_what_connecting_gives", "--nocapture"])
-        .env("COQUI_TRANSPORT_PIPE_TEST_CONNECT", path.as_os_str())
-        .uid(uid)
-        .gid(gid)
-        .output()
-        .unwrap();
+        .env("COQUI_TRANSPORT_PIPE_TEST_CONNECT", path.as_os_str());
+    run_as(&mut command, uid, gid);
+    let output = command.output().unwrap();
     assert!(output.status.success(), "{output:?}");
     String::from_utf8(output.stdout)
         .unwrap()
         .lines()
         .find_map(|line| line.strip_prefix("CONNECT=").map(str::to_owned))
         .unwrap_or_default()
+}
+
+#[cfg(not(target_vendor = "apple"))]
+fn run_as(command: &mut Command, uid: u32, gid: u32) {
+    use std::os::unix::process::CommandExt;
+
+    command.uid(uid).gid(gid);
+}
+
+/// On macOS the effective group is the first of the group list, and std empties that list when it
+/// drops root: the child would have no group at all, `getpeereid` would say group 0 and a socket
+/// open to its group would refuse it. The list is set to the one group instead.
+#[cfg(target_vendor = "apple")]
+fn run_as(command: &mut Command, uid: u32, gid: u32) {
+    use std::os::unix::process::CommandExt;
+
+    // SAFETY: the closure calls only setgroups, setgid and setuid, which are async-signal-safe and
+    // take plain values or a pointer to a local that outlives the call.
+    unsafe {
+        command.pre_exec(move || {
+            if libc::setgroups(1, &raw const gid) != 0
+                || libc::setgid(gid) != 0
+                || libc::setuid(uid) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
 }
 
 #[test]
